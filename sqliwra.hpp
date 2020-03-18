@@ -76,6 +76,7 @@ public:
 
 // =============================================================================
 
+/// A result row reference.
 class Rowref final {
 public:
   Rowref(const int field_count, char** field_values, char** field_names)
@@ -129,6 +130,7 @@ private:
 
 // =============================================================================
 
+/// A database.
 class Db final {
 public:
   using Exec_callback = std::function<int(const Rowref&)>;
@@ -219,18 +221,19 @@ private:
 
 // =============================================================================
 
-class Stmt final {
+/// A prepared statement.
+class Ps final {
 public:
-  ~Stmt()
+  ~Ps()
   {
     finalize();
   }
 
-  explicit Stmt(sqlite3_stmt* const handle = nullptr)
+  explicit Ps(sqlite3_stmt* const handle = nullptr)
     : handle_{handle}
   {}
 
-  Stmt(sqlite3* const db, const std::string_view sql, const unsigned int flags = 0)
+  Ps(sqlite3* const db, const std::string_view sql, const unsigned int flags = 0)
   {
     assert(db);
     if (const int err = sqlite3_prepare_v3(db, sql.data(), sql.size(), flags, &handle_, nullptr))
@@ -239,30 +242,30 @@ public:
   }
 
   /// Non-copyable.
-  Stmt(const Stmt&) = delete;
+  Ps(const Ps&) = delete;
 
   /// Non-copyable.
-  Stmt& operator=(const Stmt&) = delete;
+  Ps& operator=(const Ps&) = delete;
 
   /// The move constructor.
-  Stmt(Stmt&& rhs) noexcept
+  Ps(Ps&& rhs) noexcept
     : handle_{rhs.handle_}
   {
     rhs.handle_ = nullptr;
   }
 
   /// The move assignment operator.
-  Stmt& operator=(Stmt&& rhs) noexcept
+  Ps& operator=(Ps&& rhs) noexcept
   {
     if (this != &rhs) {
-      Stmt tmp{std::move(rhs)};
+      Ps tmp{std::move(rhs)};
       swap(tmp);
     }
     return *this;
   }
 
   /// The swap operation.
-  void swap(Stmt& other) noexcept
+  void swap(Ps& other) noexcept
   {
     std::swap(handle_, other.handle_);
   }
