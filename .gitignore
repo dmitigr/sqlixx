@@ -1,0 +1,14 @@
+*~
+*.[oa]
+*.exe
+*.[ip]db
+*.ilk
+*.obj
+*bld*
+*build*
+.DS_Store
+BROWSE
+.idea
+.vs
+
+cmake-build-*
