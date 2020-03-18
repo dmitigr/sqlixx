@@ -25,6 +25,7 @@
 #include <algorithm>
 #include <cassert>
 #include <cstring>
+#include <cstddef>
 #include <functional>
 #include <memory>
 #include <stdexcept>
@@ -288,8 +289,38 @@ public:
     return result;
   }
 
+  void bind(const int index, const int value)
+  {
+    assert(handle_);
+    check_bind(sqlite3_bind_int(handle_, index, value));
+  }
+
+  void bind(const int index, const double value)
+  {
+    assert(handle_);
+    check_bind(sqlite3_bind_double(handle_, index, value));
+  }
+
+  void bind(const int index, const std::string_view value)
+  {
+    assert(handle_);
+    check_bind(sqlite3_bind_text64(handle_, index, value.data(), value.size(), SQLITE_STATIC, SQLITE_UTF8));
+  }
+
+  void bind(const int index)
+  {
+    assert(handle_);
+    check_bind(sqlite3_bind_null(handle_, index));
+  }
+
 private:
   sqlite3_stmt* handle_{};
+
+  static void check_bind(const int result)
+  {
+    if (result != SQLITE_OK)
+      throw Exception{result, "cannot bind prepared statement parameter"};
+  }
 };
 
 } // namespace dmitigr::sqliwra
