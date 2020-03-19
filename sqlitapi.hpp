@@ -368,9 +368,11 @@ public:
    * @param callback A function to be called for each retrieved row. The function
    * must be defined with a parameter of type `const Ps&` and must returns a
    * boolean to indicate should the execution to be continued or not.
+   *
+   * @remarks Reset must be called to re-execute the prepared statement.
    */
   template<typename F>
-  void execute(F&& callback)
+  void execute_once(F&& callback)
   {
     assert(handle_);
     while (true) {
@@ -388,6 +390,20 @@ public:
         throw Exception(r, "failed to execute a prepared statement");
       }
     }
+  }
+
+  /// @overload
+  void execute_once()
+  {
+    return execute_once([](const auto&){ return true; });
+  }
+
+  /// Similar to `(execute_once(), reset());
+  template<typename F>
+  void execute(F&& callback)
+  {
+    execute_once(std::forward<F>(callback));
+    reset();
   }
 
   /// @overload
