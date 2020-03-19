@@ -83,10 +83,10 @@ public:
 // =============================================================================
 
 namespace detail {
-inline void check_bind(const int result)
+inline void check_bind(const int r)
 {
-  if (result != SQLITE_OK)
-    throw Exception{result, "cannot bind prepared statement parameter"};
+  if (r != SQLITE_OK)
+    throw Exception{r, "cannot bind a prepared statement parameter"};
 }
 } // namespace detail
 
@@ -198,6 +198,8 @@ struct Conversions<std::optional<T>> final {
   }
 };
 
+// =============================================================================
+
 /// A prepared statement.
 class Ps final {
 public:
@@ -220,8 +222,8 @@ public:
   Ps(sqlite3* const handle, const std::string_view sql, const unsigned int flags = 0)
   {
     assert(handle);
-    if (const int err = sqlite3_prepare_v3(handle, sql.data(), sql.size(), flags, &handle_, nullptr))
-      throw Exception{err, std::string{"cannot prepare statement "}.append(sql)};
+    if (const int r = sqlite3_prepare_v3(handle, sql.data(), sql.size(), flags, &handle_, nullptr); r != SQLITE_OK)
+      throw Exception{r, std::string{"cannot prepare statement "}.append(sql)};
     assert(handle_);
   }
 
@@ -260,17 +262,11 @@ public:
     return handle_;
   }
 
-  /// @returns The underlying handle.
-  operator sqlite3_stmt*() const noexcept
-  {
-    return handle_;
-  }
-
   /// Closes the prepared statement.
   void close()
   {
-    if (const int result = sqlite3_finalize(handle_))
-      throw Exception{result, "error upon closing prepared statement"};
+    if (const int r = sqlite3_finalize(handle_); r != SQLITE_OK)
+      throw Exception{r, "cannot close a prepared statement"};
     else
       handle_ = nullptr;
   }
@@ -297,16 +293,16 @@ public:
 
   /**
    * @returns The parameter index.
-   *
-   * @throws `std::logic_error` if no parameter `name` presents.
    */
   int parameter_index_throw(const char* const name) const
   {
     assert(handle_ && name);
-    if (const int index = parameter_index(name); index >= 0)
-      return index;
-    else
+    const int index = parameter_index(name);
+#ifndef NDEBUG
+    if (index < 0)
       throw std::logic_error{std::string{"no parameter with name "}.append(name)};
+#endif
+    return index;
   }
 
   /// @returns The name of the parameter by the `index`.
@@ -334,7 +330,7 @@ public:
   template<typename T>
   void bind(const int index, T&& value)
   {
-    assert(handle_);
+    assert(handle_ && index < parameter_count());
     using U = std::decay_t<T>;
     Conversions<U>::bind(handle_, index + 1, std::forward<T>(value));
   }
@@ -372,8 +368,7 @@ public:
   {
     assert(handle_);
     while (true) {
-      const int step_result = sqlite3_step(handle_);
-      switch (step_result) {
+      switch (const int r = sqlite3_step(handle_)) {
       case SQLITE_ROW:
         if (!callback(static_cast<const Ps&>(*this)))
           return;
@@ -383,7 +378,8 @@ public:
         [[fallthrough]];
       case SQLITE_DONE:
         return;
-      default: throw Exception(step_result, "error upon prepared statement execution");
+      default:
+        throw Exception(r, "failed to execute a prepared statement");
       }
     }
   }
@@ -425,15 +421,16 @@ public:
 
   /**
    * @returns The columnt index.
-   *
-   * @throws `std::logic_error` if no column `name` presents.
    */
   int column_index_throw(const char* const name) const
   {
-    if (const int index = column_index(name); index >= 0)
-      return index;
-    else
+    assert(handle_ && name);
+    const int index = column_index(name);
+#ifndef NDEBUG
+    if (index < 0)
       throw std::logic_error{std::string{"no column with name "}.append(name)};
+#endif
+    return index;
   }
 
   /// @returns The name of the column by the `index`.
@@ -517,8 +514,8 @@ public:
   /// overload.
   Conn(const std::filesystem::path& path, const int flags)
   {
-    if (const int err = sqlite3_open_v2(path.c_str(), &handle_, flags, nullptr))
-      throw Exception{err, sqlite3_errmsg(handle_)};
+    if (const int r = sqlite3_open_v2(path.c_str(), &handle_, flags, nullptr); r != SQLITE_OK)
+      throw Exception{r, sqlite3_errmsg(handle_)};
     assert(handle_);
   }
 
@@ -557,17 +554,11 @@ public:
     return handle_;
   }
 
-  /// @returns The guarded handle.
-  operator sqlite3*() const noexcept
-  {
-    return handle();
-  }
-
   /// Closes the database connection.
   void close()
   {
-    if (const int result = sqlite3_close(handle_))
-      throw Exception{result, "error upon closing database connection"};
+    if (const int r = sqlite3_close(handle_); r != SQLITE_OK)
+      throw Exception{r, "failed to close a database connection"};
     else
       handle_ = nullptr;
   }
