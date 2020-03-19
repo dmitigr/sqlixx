@@ -40,14 +40,20 @@
 #if __GNUG__
   #if (__GNUC__ >= 8)
     #include <filesystem>
+    namespace dmitigr::sqliwra::detail {
+    namespace fs = std::filesystem;
+    }
   #else
     #include <experimental/filesystem>
-    namespace std {
-    namespace filesystem = experimental::filesystem;
-    } // namespace std
+    namespace dmitigr::sqliwra::detail {
+    namespace fs = std::experimental::filesystem;
+    }
   #endif
 #else
 #include <filesystem>
+namespace dmitigr::sqliwra::detail {
+namespace fs = std::filesystem;
+}
 #endif
 
 namespace dmitigr::sqliwra {
@@ -511,13 +517,30 @@ public:
     : handle_{handle}
   {}
 
-  /// overload.
-  Conn(const std::filesystem::path& path, const int flags)
+  /**
+   * @brief The constructor.
+   *
+   * @param ref Path to a file or URI.
+   *
+   * @see https://www.sqlite.org/uri.html
+   */
+  Conn(const char* const ref, const int flags)
   {
-    if (const int r = sqlite3_open_v2(path.c_str(), &handle_, flags, nullptr); r != SQLITE_OK)
+    assert(ref);
+    if (const int r = sqlite3_open_v2(ref, &handle_, flags, nullptr); r != SQLITE_OK)
       throw Exception{r, sqlite3_errmsg(handle_)};
     assert(handle_);
   }
+
+  /// @overload
+  Conn(const std::string& ref, const int flags)
+    : Conn{ref.c_str(), flags}
+  {}
+
+  /// @overload
+  Conn(const detail::fs::path& path, const int flags)
+    : Conn{path.c_str(), flags}
+  {}
 
   /// Non-copyable.
   Conn(const Conn&) = delete;
