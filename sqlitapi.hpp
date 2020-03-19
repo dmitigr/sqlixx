@@ -370,6 +370,8 @@ public:
    * boolean to indicate should the execution to be continued or not.
    *
    * @remarks Reset must be called to re-execute the prepared statement.
+   *
+   * @see execute().
    */
   template<typename F>
   void execute_once(F&& callback)
@@ -615,13 +617,13 @@ public:
   /**
    * Executes the `sql`.
    *
-   * @see Ps::execute().
+   * @see Ps::execute_once().
    */
   template<typename F>
   void execute(const std::string_view sql, F&& callback)
   {
     assert(handle());
-    prepare(sql).execute(std::forward<F>(callback));
+    prepare(sql).execute_once(std::forward<F>(callback));
   }
 
   /// @overload
