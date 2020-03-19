@@ -355,14 +355,6 @@ public:
   /// @name Execution
   /// @{
 
-  /// Resets a prepared statement object to the ready to be re-executed state.
-  void reset()
-  {
-    assert(handle_);
-    if (const int r = sqlite3_reset(handle_); r != SQLITE_OK)
-      throw Exception{r, "cannot reset a prepared statement"};
-  }
-
   /**
    * @brief Executes the prepared statement.
    * @param callback A function to be called for each retrieved row. The function
@@ -384,7 +376,7 @@ public:
           return;
         else
           continue;
-      case SQLITE_OK:
+      case SQLITE_OK: // just in case
         [[fallthrough]];
       case SQLITE_DONE:
         return;
@@ -405,7 +397,7 @@ public:
   void execute(F&& callback)
   {
     execute_once(std::forward<F>(callback));
-    reset();
+    sqlite3_reset(handle_);
   }
 
   /// @overload
