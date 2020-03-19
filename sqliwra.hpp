@@ -22,15 +22,20 @@
 
 #include <sqlite3.h>
 
-#include <algorithm>
 #include <cassert>
 #include <cstring>
 #include <cstddef>
+#include <cstdio>
 #include <functional>
 #include <memory>
+#include <new>
+#include <optional>
 #include <stdexcept>
+#include <string>
 #include <string_view>
 #include <system_error>
+#include <type_traits>
+#include <utility>
 
 #if __GNUG__
   #if (__GNUC__ >= 8)
@@ -77,167 +82,145 @@ public:
 
 // =============================================================================
 
-/// A result row reference.
-class Rowref final {
-public:
-  Rowref(const int field_count, char** field_values, char** field_names)
-    : field_count_{field_count}
-    , field_values_{field_values}
-    , field_names_{field_names}
+namespace detail {
+inline void check_bind(const int result)
+{
+  if (result != SQLITE_OK)
+    throw Exception{result, "cannot bind prepared statement parameter"};
+}
+} // namespace detail
+
+/// The centralized "namespace" for column data conversions.
+template<typename> struct Conversions;
+
+/// The implementation of `int` conversions.
+template<>
+struct Conversions<int> final {
+  static int data(sqlite3_stmt* const handle, const int index)
   {
-    assert(field_count >=0 && field_values && field_names);
+    return sqlite3_column_int(handle, index);
   }
 
-  int field_count() const noexcept
+  static void bind(sqlite3_stmt* const handle, const int index, const int value)
   {
-    return field_count_;
+    detail::check_bind(sqlite3_bind_int(handle, index, value));
+  }
+};
+
+/// The implementation of `sqlite3_int64` conversions.
+template<>
+struct Conversions<sqlite3_int64> final {
+  static sqlite3_int64 data(sqlite3_stmt* const handle, const int index)
+  {
+    return sqlite3_column_int64(handle, index);
   }
 
-  int field_index(const char* const field_name) const noexcept
+  static void bind(sqlite3_stmt* const handle, const int index, const sqlite3_int64 value)
   {
-    assert(field_name);
-    const auto b = field_names_;
-    const auto e = field_names_ + field_count_;
-    const auto i = std::find_if(b, e,
-      [field_name](const char* const name) { return !std::strcmp(name, field_name); });
-    return i != e ? i - b : -1;
+    detail::check_bind(sqlite3_bind_int64(handle, index, value));
+  }
+};
+
+/// The implementation of `double` conversions.
+template<>
+struct Conversions<double> final {
+  static double data(sqlite3_stmt* const handle, const int index)
+  {
+    return sqlite3_column_double(handle, index);
   }
 
-  const char* field_name(const int index) const noexcept
+  static void bind(sqlite3_stmt* const handle, const int index, const double value)
   {
-    assert(index < field_count());
-    return field_names_[index];
+    detail::check_bind(sqlite3_bind_double(handle, index, value));
+  }
+};
+
+/// The implementation of `std::string` conversions.
+template<>
+struct Conversions<std::string> final {
+  static std::string data(sqlite3_stmt* const handle, const int index)
+  {
+    return std::string{reinterpret_cast<const char*>(sqlite3_column_text(handle, index)),
+        static_cast<std::string::size_type>(sqlite3_column_bytes(handle, index))};
   }
 
-  const char* field_value(const int index) const noexcept
+  template<typename S>
+  static std::enable_if_t<std::is_same_v<std::decay_t<S>, std::string>>
+  bind(sqlite3_stmt* const handle, const int index, S&& value)
   {
-    assert(index < field_count());
-    return field_values_[index];
+    constexpr auto destr = std::is_rvalue_reference_v<S&&> ? SQLITE_TRANSIENT : SQLITE_STATIC;
+    detail::check_bind(sqlite3_bind_text64(handle, index,
+        value.data(), value.size(), destr, SQLITE_UTF8));
+  }
+};
+
+/// The implementation of `std::string_view` conversions.
+template<>
+struct Conversions<std::string_view> final {
+  static std::string_view data(sqlite3_stmt* const handle, const int index)
+  {
+    return std::string_view{static_cast<const char*>(sqlite3_column_blob(handle, index)),
+        static_cast<std::string_view::size_type>(sqlite3_column_bytes(handle, index))};
   }
 
-  const char* field_value(const char* const field_name) const
+  template<typename Sv>
+  static std::enable_if_t<std::is_same_v<std::decay_t<Sv>, std::string_view>>
+  bind(sqlite3_stmt* const handle, const int index, Sv&& value)
   {
-    if (const int index = field_index(field_name); index >= 0)
-      return field_value(index);
+    constexpr auto destr = std::is_rvalue_reference_v<Sv&&> ? SQLITE_TRANSIENT : SQLITE_STATIC;
+    detail::check_bind(sqlite3_bind_blob64(handle, index,
+        value.data(), value.size(), destr));
+  }
+};
+
+/// The implementation of `std::optional<T>` conversions.
+template<typename T>
+struct Conversions<std::optional<T>> final {
+  static std::optional<T> data(sqlite3_stmt* const handle, const int index)
+  {
+    if (sqlite3_column_type(handle, index) != SQLITE_NULL)
+      return Conversions<T>::data(handle, index);
     else
-      throw std::logic_error{std::string{"no field with name "}.append(field_name)};
+      return std::nullopt;
   }
 
-private:
-  int field_count_{};
-  char** field_values_{};
-  char** field_names_{};
+  template<typename O>
+  static std::enable_if_t<std::is_same_v<std::decay_t<O>, std::optional<T>>>
+  bind(sqlite3_stmt* const handle, const int index, O&& value)
+  {
+    if (value) {
+      if constexpr (std::is_rvalue_reference_v<O&&>)
+        bind(handle, index, std::move(*value));
+      else
+        bind(handle, index, *value);
+    } else
+      detail::check_bind(sqlite3_bind_null(handle, index));
+  }
 };
-
-// =============================================================================
-
-/// A database.
-class Db final {
-public:
-  using Exec_callback = std::function<int(const Rowref&)>;
-
-  ~Db()
-  {
-    close();
-  }
-
-  explicit Db(sqlite3* handle = nullptr)
-    : handle_{handle}
-  {}
-
-  Db(const std::filesystem::path& path, const int flags)
-  {
-    if (const int err = sqlite3_open_v2(path.c_str(), &handle_, flags, nullptr))
-      throw Exception{err, std::string{"cannot open the database: "}.append(sqlite3_errmsg(handle_))};
-    assert(handle_);
-  }
-
-  /// Non-copyable.
-  Db(const Db&) = delete;
-
-  /// Non-copyable.
-  Db& operator=(const Db&) = delete;
-
-  /// The move constructor.
-  Db(Db&& rhs) noexcept
-    : handle_{rhs.handle_}
-  {
-    rhs.handle_ = nullptr;
-  }
-
-  /// The move assignment operator.
-  Db& operator=(Db&& rhs) noexcept
-  {
-    if (this != &rhs) {
-      Db tmp{std::move(rhs)};
-      swap(tmp);
-    }
-    return *this;
-  }
-
-  /// The swap operation.
-  void swap(Db& other) noexcept
-  {
-    std::swap(handle_, other.handle_);
-  }
-
-  sqlite3* handle() const noexcept
-  {
-    return handle_;
-  }
-
-  operator sqlite3*() const noexcept
-  {
-    return handle();
-  }
-
-  int close() noexcept
-  {
-    const int result = sqlite3_close(handle_);
-    if (!result)
-      handle_ = nullptr;
-    return result;
-  }
-
-  void exec(const char* const sql, Exec_callback callback = {})
-  {
-    assert(handle());
-    assert(sql);
-    char* p{};
-    const int err = sqlite3_exec(handle_, sql,
-      [](void* cbp, int field_count, char** field_values, char** field_names) -> int
-      {
-        const auto* const callback = static_cast<Exec_callback*>(cbp);
-        return (*callback)(Rowref{field_count, field_values, field_names});
-      },
-      &callback, &p);
-    std::unique_ptr<char, void(*)(void*)> errmsg{p, &sqlite3_free};
-    if (err)
-      throw Exception{err, errmsg.get()};
-  }
-
-private:
-  sqlite3* handle_{};
-};
-
-// =============================================================================
 
 /// A prepared statement.
 class Ps final {
 public:
+  /// The destructor.
   ~Ps()
   {
-    finalize();
+    try {
+      close();
+    } catch(const std::exception& e) {
+      std::fprintf(stderr, "%s\n", e.what());
+    } catch(...) {}
   }
 
+  /// The constructor.
   explicit Ps(sqlite3_stmt* const handle = nullptr)
     : handle_{handle}
   {}
 
-  Ps(sqlite3* const db, const std::string_view sql, const unsigned int flags = 0)
+  /// @overload
+  Ps(sqlite3* const handle, const std::string_view sql, const unsigned int flags = 0)
   {
-    assert(db);
-    if (const int err = sqlite3_prepare_v3(db, sql.data(), sql.size(), flags, &handle_, nullptr))
+    assert(handle);
+    if (const int err = sqlite3_prepare_v3(handle, sql.data(), sql.size(), flags, &handle_, nullptr))
       throw Exception{err, std::string{"cannot prepare statement "}.append(sql)};
     assert(handle_);
   }
@@ -271,56 +254,354 @@ public:
     std::swap(handle_, other.handle_);
   }
 
+  /// @returns The underlying handle.
   sqlite3_stmt* handle() const noexcept
   {
     return handle_;
   }
 
+  /// @returns The underlying handle.
   operator sqlite3_stmt*() const noexcept
+  {
+    return handle_;
+  }
+
+  /// Closes the prepared statement.
+  void close()
+  {
+    if (const int result = sqlite3_finalize(handle_))
+      throw Exception{result, "error upon closing prepared statement"};
+    else
+      handle_ = nullptr;
+  }
+
+  // ---------------------------------------------------------------------------
+
+  /// @name Parameters
+  /// @remarks Parameter indexes starts from zero!
+  /// @{
+
+  /// @returns The number of parameters.
+  int parameter_count() const
+  {
+    assert(handle_);
+    return sqlite3_bind_parameter_count(handle_);
+  }
+
+  /// @returns The parameter index, or -1 if no parameter `name` presents.
+  int parameter_index(const char* const name) const
+  {
+    assert(handle_ && name);
+    return sqlite3_bind_parameter_index(handle_, name) - 1;
+  }
+
+  /**
+   * @returns The parameter index.
+   *
+   * @throws `std::logic_error` if no parameter `name` presents.
+   */
+  int parameter_index_throw(const char* const name) const
+  {
+    assert(handle_ && name);
+    if (const int index = parameter_index(name); index >= 0)
+      return index;
+    else
+      throw std::logic_error{std::string{"no parameter with name "}.append(name)};
+  }
+
+  /// @returns The name of the parameter by the `index`.
+  std::string parameter_name(const int index) const noexcept
+  {
+    assert(handle_ && index < parameter_count());
+    return sqlite3_column_name(handle_, index + 1);
+  }
+
+  /// Binds all the parameters with NULL.
+  void bind_null()
+  {
+    assert(handle_);
+    detail::check_bind(sqlite3_clear_bindings(handle_));
+  }
+
+  /// Binds the parameter of the specified index with NULL.
+  void bind_null(const int index)
+  {
+    assert(handle_ && index < parameter_count());
+    detail::check_bind(sqlite3_bind_null(handle_, index + 1));
+  }
+
+  /// Binds the parameter of the specified index with the value of type `T`.
+  template<typename T>
+  void bind(const int index, T&& value)
+  {
+    assert(handle_);
+    using U = std::decay_t<T>;
+    Conversions<U>::bind(handle_, index + 1, std::forward<T>(value));
+  }
+
+  /// @overload
+  template<typename T>
+  void bind(const char* const name, T&& value)
+  {
+    bind(parameter_index_throw(name), std::forward<T>(value));
+  }
+
+  /// @}
+
+  // ---------------------------------------------------------------------------
+
+  /// @name Execution
+  /// @{
+
+  /// Resets a prepared statement object to the ready to be re-executed state.
+  void reset()
+  {
+    assert(handle_);
+    if (const int r = sqlite3_reset(handle_); r != SQLITE_OK)
+      throw Exception{r, "cannot reset a prepared statement"};
+  }
+
+  /**
+   * @brief Executes the prepared statement.
+   * @param callback A function to be called for each retrieved row. The function
+   * must be defined with a parameter of type `const Ps&` and must returns a
+   * boolean to indicate should the execution to be continued or not.
+   */
+  template<typename F>
+  void execute(F&& callback)
+  {
+    assert(handle_);
+    while (true) {
+      const int step_result = sqlite3_step(handle_);
+      switch (step_result) {
+      case SQLITE_ROW:
+        if (!callback(static_cast<const Ps&>(*this)))
+          return;
+        else
+          continue;
+      case SQLITE_OK:
+        [[fallthrough]];
+      case SQLITE_DONE:
+        return;
+      default: throw Exception(step_result, "error upon prepared statement execution");
+      }
+    }
+  }
+
+  /// @overload
+  void execute()
+  {
+    return execute([](const auto&){ return true; });
+  }
+
+  /// @}
+
+  // ---------------------------------------------------------------------------
+
+  /// @name Result
+  /// @{
+
+  /// @returns The number of columns.
+  int column_count() const
+  {
+    assert(handle_);
+    return sqlite3_column_count(handle_);
+  }
+
+  /// @returns The column index, or -1 if no column `name` presents.
+  int column_index(const char* const name) const
+  {
+    assert(handle_ && name);
+    const int count = column_count();
+    for (int i = 0; i < count; ++i) {
+      if (const char* const nm = sqlite3_column_name(handle_, i)) {
+        if (!std::strcmp(name, nm))
+          return i;
+      } else
+        throw std::bad_alloc{};
+    }
+    return -1;
+  }
+
+  /**
+   * @returns The columnt index.
+   *
+   * @throws `std::logic_error` if no column `name` presents.
+   */
+  int column_index_throw(const char* const name) const
+  {
+    if (const int index = column_index(name); index >= 0)
+      return index;
+    else
+      throw std::logic_error{std::string{"no column with name "}.append(name)};
+  }
+
+  /// @returns The name of the column by the `index`.
+  std::string column_name(const int index) const noexcept
+  {
+    assert(handle_ && index < column_count());
+    return sqlite3_column_name(handle_, index);
+  }
+
+  /// @returns The column data size in bytes.
+  int column_data_size(const int index) const
+  {
+    assert(handle_ && index < column_count());
+    return sqlite3_column_bytes(handle_, index);
+  }
+
+  /// @overload
+  int column_data_size(const char* const name) const
+  {
+    return column_data_size(column_index_throw(name));
+  }
+
+  /**
+   * @returns The result data which may be zero-terminated or not,
+   * depending on its type.
+   */
+  const char* column_data(const int index) const
+  {
+    assert(handle_ && index < column_count());
+    return static_cast<const char*>(sqlite3_column_blob(handle_, index));
+  }
+
+  /// @overload
+  const char* column_data(const char* const name) const
+  {
+    return column_data(column_index_throw(name));
+  }
+
+  /// @overload
+  template<typename T>
+  T column_data(const int index) const
+  {
+    assert(handle_ && index < column_count());
+    using U = std::decay_t<T>;
+    return Conversions<U>::data(handle_, index);
+  }
+
+  /// @overload
+  template<typename T>
+  T column_data(const char* const name) const
+  {
+    return column_data<T>(column_index_throw(name));
+  }
+
+  /// @}
+
+private:
+  sqlite3_stmt* handle_{};
+};
+
+// =============================================================================
+
+/// A database connection.
+class Conn final {
+public:
+  /// The destructor.
+  ~Conn()
+  {
+    try {
+      close();
+    } catch(const std::exception& e) {
+      std::fprintf(stderr, "%s\n", e.what());
+    } catch(...) {}
+  }
+
+  /// The constructor.
+  explicit Conn(sqlite3* handle = nullptr)
+    : handle_{handle}
+  {}
+
+  /// overload.
+  Conn(const std::filesystem::path& path, const int flags)
+  {
+    if (const int err = sqlite3_open_v2(path.c_str(), &handle_, flags, nullptr))
+      throw Exception{err, sqlite3_errmsg(handle_)};
+    assert(handle_);
+  }
+
+  /// Non-copyable.
+  Conn(const Conn&) = delete;
+
+  /// Non-copyable.
+  Conn& operator=(const Conn&) = delete;
+
+  /// The move constructor.
+  Conn(Conn&& rhs) noexcept
+    : handle_{rhs.handle_}
+  {
+    rhs.handle_ = nullptr;
+  }
+
+  /// The move assignment operator.
+  Conn& operator=(Conn&& rhs) noexcept
+  {
+    if (this != &rhs) {
+      Conn tmp{std::move(rhs)};
+      swap(tmp);
+    }
+    return *this;
+  }
+
+  /// The swap operation.
+  void swap(Conn& other) noexcept
+  {
+    std::swap(handle_, other.handle_);
+  }
+
+  /// @returns The guarded handle.
+  sqlite3* handle() const noexcept
+  {
+    return handle_;
+  }
+
+  /// @returns The guarded handle.
+  operator sqlite3*() const noexcept
   {
     return handle();
   }
 
-  int finalize() noexcept
+  /// Closes the database connection.
+  void close()
   {
-    const int result = sqlite3_finalize(handle_);
-    if (!result)
+    if (const int result = sqlite3_close(handle_))
+      throw Exception{result, "error upon closing database connection"};
+    else
       handle_ = nullptr;
-    return result;
   }
 
-  void bind(const int index, const int value)
+  /**
+   * @brief Constructs the prepared statement from `sql`.
+   *
+   * @see Ps::Ps().
+   */
+  Ps prepare(const std::string_view sql, const unsigned int flags = 0)
   {
-    assert(handle_);
-    check_bind(sqlite3_bind_int(handle_, index, value));
+    return Ps{handle_, sql, flags};
   }
 
-  void bind(const int index, const double value)
+  /**
+   * Executes the `sql`.
+   *
+   * @see Ps::execute().
+   */
+  template<typename F>
+  void execute(const std::string_view sql, F&& callback)
   {
-    assert(handle_);
-    check_bind(sqlite3_bind_double(handle_, index, value));
+    assert(handle());
+    prepare(sql).execute(std::forward<F>(callback));
   }
 
-  void bind(const int index, const std::string_view value)
+  /// @overload
+  void execute(const std::string_view sql)
   {
-    assert(handle_);
-    check_bind(sqlite3_bind_text64(handle_, index, value.data(), value.size(), SQLITE_STATIC, SQLITE_UTF8));
-  }
-
-  void bind(const int index)
-  {
-    assert(handle_);
-    check_bind(sqlite3_bind_null(handle_, index));
+    return execute(sql, [](const auto&){ return true; });
   }
 
 private:
-  sqlite3_stmt* handle_{};
-
-  static void check_bind(const int result)
-  {
-    if (result != SQLITE_OK)
-      throw Exception{result, "cannot bind prepared statement parameter"};
-  }
+  sqlite3* handle_{};
 };
 
 } // namespace dmitigr::sqliwra
