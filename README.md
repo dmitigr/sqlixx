@@ -4,6 +4,8 @@
 
 **ATTENTION, this software is "alpha" quality, use it at your own risk!**
 
+**ATTENTION, the API is a subject to change!**
+
 Any feedback are [welcome][dmitigr_mail].
 
 ## Licenses and copyrights
