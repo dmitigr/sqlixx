@@ -325,7 +325,7 @@ public:
   /// @returns The name of the parameter by the `index`.
   std::string parameter_name(const int index) const noexcept
   {
-    assert(handle_ && index < parameter_count());
+    assert(handle_ && (index < parameter_count()));
     return sqlite3_column_name(handle_, index + 1);
   }
 
@@ -339,7 +339,7 @@ public:
   /// Binds the parameter of the specified index with NULL.
   void bind_null(const int index)
   {
-    assert(handle_ && index < parameter_count());
+    assert(handle_ && (index < parameter_count()));
     detail::check_bind(sqlite3_bind_null(handle_, index + 1));
   }
 
@@ -355,7 +355,7 @@ public:
   template<typename T>
   void bind(const int index, T&& value)
   {
-    assert(handle_ && index < parameter_count());
+    assert(handle_ && (index < parameter_count()));
     using U = std::decay_t<T>;
     Conversions<U>::bind(handle_, index + 1, std::forward<T>(value));
   }
@@ -498,14 +498,14 @@ public:
   /// @returns The name of the column by the `index`.
   std::string column_name(const int index) const noexcept
   {
-    assert(handle_ && index < column_count());
+    assert(handle_ && (index < column_count()));
     return sqlite3_column_name(handle_, index);
   }
 
   /// @returns The column data size in bytes.
   int column_data_size(const int index) const
   {
-    assert(handle_ && index < column_count());
+    assert(handle_ && (index < column_count()));
     return sqlite3_column_bytes(handle_, index);
   }
 
@@ -521,7 +521,7 @@ public:
    */
   const char* column_data(const int index) const
   {
-    assert(handle_ && index < column_count());
+    assert(handle_ && (index < column_count()));
     return static_cast<const char*>(sqlite3_column_blob(handle_, index));
   }
 
@@ -535,7 +535,7 @@ public:
   template<typename T>
   T column_data(const int index) const
   {
-    assert(handle_ && index < column_count());
+    assert(handle_ && (index < column_count()));
     using U = std::decay_t<T>;
     return Conversions<U>::data(handle_, index);
   }
