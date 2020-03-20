@@ -23,11 +23,9 @@
 #include <sqlite3.h>
 
 #include <cassert>
-#include <cstring>
 #include <cstddef>
 #include <cstdio>
-#include <functional>
-#include <memory>
+#include <cstring>
 #include <new>
 #include <optional>
 #include <stdexcept>
