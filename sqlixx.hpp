@@ -350,6 +350,22 @@ public:
     bind(parameter_index_throw(name), std::forward<T>(value));
   }
 
+  /**
+   * @brief Binds parameters by indexes in range [0, sizeof ... (values)).
+   *
+   * In other words:
+   * @code bind_many(value1, value2, value3) @endcode
+   * equivalently to
+   * @code (bind(0, value1), bind(1, value1), bind(2, value2)) @endcode
+   *
+   * @see bind().
+   */
+  template<typename ... Types>
+  void bind_many(Types&& ... values)
+  {
+    bind_many__(std::make_index_sequence<sizeof ... (Types)>{}, std::forward<Types>(values)...);
+  }
+
   /// @}
 
   // ---------------------------------------------------------------------------
@@ -370,10 +386,12 @@ public:
    *
    * @see execute().
    */
-  template<typename F>
-  void execute_once(F&& callback)
+  template<typename F, typename ... Types>
+  std::enable_if_t<std::is_invocable_r_v<bool, F, const Statement&>>
+  execute_once(F&& callback, Types&& ... values)
   {
     assert(handle_);
+    bind_many(std::forward<Types>(values)...);
     while (true) {
       switch (const int r = sqlite3_step(handle_)) {
       case SQLITE_ROW:
@@ -392,26 +410,29 @@ public:
   }
 
   /// @overload
-  void execute_once()
+  template<typename ... Types>
+  void execute_once(Types&& ... values)
   {
-    return execute_once([](const auto&){ return true; });
+    execute_once([](const auto&){ return true; }, std::forward<Types>(values)...);
   }
 
   /**
    * @brief Executes the prepared statement and resets it to the ready to be
    * re-executed state.
    */
-  template<typename F>
-  void execute(F&& callback)
+  template<typename F, typename ... Types>
+  std::enable_if_t<std::is_invocable_r_v<bool, F, const Statement&>>
+  execute(F&& callback, Types&& ... values)
   {
-    execute_once(std::forward<F>(callback));
+    execute_once(std::forward<F>(callback), std::forward<Types>(values)...);
     sqlite3_reset(handle_);
   }
 
   /// @overload
-  void execute()
+  template<typename ... Types>
+  void execute(Types&& ... values)
   {
-    return execute([](const auto&){ return true; });
+    return execute([](const auto&){ return true; }, std::forward<Types>(values)...);
   }
 
   /// @}
@@ -513,6 +534,12 @@ public:
 
 private:
   sqlite3_stmt* handle_{};
+
+  template<std::size_t ... I, typename ... Types>
+  void bind_many__(std::index_sequence<I...>, Types&& ... values)
+  {
+    (bind(static_cast<int>(I), std::forward<Types>(values)), ...);
+  }
 };
 
 // =============================================================================
@@ -619,17 +646,19 @@ public:
    *
    * @see Statement::execute_once().
    */
-  template<typename F>
-  void execute(const std::string_view sql, F&& callback)
+  template<typename F, typename ... Types>
+  std::enable_if_t<std::is_invocable_r_v<bool, F, const Statement&>>
+  execute(F&& callback, const std::string_view sql, Types&& ... values)
   {
-    assert(handle());
-    prepare(sql).execute_once(std::forward<F>(callback));
+    assert(handle_);
+    prepare(sql).execute_once(std::forward<F>(callback), std::forward<Types>(values)...);
   }
 
   /// @overload
-  void execute(const std::string_view sql)
+  template<typename ... Types>
+  void execute(const std::string_view sql, Types&& ... values)
   {
-    return execute(sql, [](const auto&){ return true; });
+    execute([](const auto&){ return true; }, sql, std::forward<Types>(values)...);
   }
 
 private:
