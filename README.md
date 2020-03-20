@@ -2,11 +2,18 @@
 
 `sqlixx` - is a header-only C++ API for SQLite. Just include `sqlixx.hpp`.
 
-**ATTENTION, this software is "alpha" quality, use it at your own risk!**
+To use this library, a compiler with C++17 support (such as GCC 7.5+) is required.
 
 **ATTENTION, the API is a subject to change!**
 
 Any feedback are [welcome][dmitigr_mail].
+
+## Features
+
+  - easy to use library in a single header;
+  - almost no overhead compared to native C API;
+  - zero-based indices for both prepared statement parameters and result columns;
+  - easy to use extensible data type conversion system.
 
 ## Example
 
