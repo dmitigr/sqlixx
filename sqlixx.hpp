@@ -39,18 +39,18 @@
   #if (__GNUC__ >= 8)
     #include <filesystem>
     namespace dmitigr::sqlixx::detail {
-    namespace fs = std::filesystem;
+    namespace std_filesystem = std::filesystem;
     }
   #else
     #include <experimental/filesystem>
     namespace dmitigr::sqlixx::detail {
-    namespace fs = std::experimental::filesystem;
+    namespace std_filesystem = std::experimental::filesystem;
     }
   #endif
 #else
 #include <filesystem>
 namespace dmitigr::sqlixx::detail {
-namespace fs = std::filesystem;
+namespace std_filesystem = std::filesystem;
 }
 #endif
 
@@ -581,7 +581,7 @@ public:
   {}
 
   /// @overload
-  Connection(const detail::fs::path& path, const int flags)
+  Connection(const detail::std_filesystem::path& path, const int flags)
     : Connection{path.c_str(), flags}
   {}
 
