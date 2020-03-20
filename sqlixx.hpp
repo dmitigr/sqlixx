@@ -54,7 +54,18 @@ namespace std_filesystem = std::filesystem;
 }
 #endif
 
+#define DMITIGR_SQLIXX_VERSION_MAJOR 0
+#define DMITIGR_SQLIXX_VERSION_MINOR 1
+
 namespace dmitigr::sqlixx {
+
+/// @returns The version of library calculated as `(major * 1000 + minor)`.
+constexpr int version() noexcept
+{
+  constexpr int major = DMITIGR_SQLIXX_VERSION_MAJOR;
+  constexpr int minor = DMITIGR_SQLIXX_VERSION_MINOR;
+  return major*1000 + minor; // 1.23 -> 1 * 1000 + 23 = 1023
+}
 
 /// A category of SQLite errors.
 class Sqlite_error_category final : public std::error_category {
