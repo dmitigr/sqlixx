@@ -361,6 +361,9 @@ public:
    * @brief Executes the prepared statement and invalidates it for a subsequent
    * execution (step).
    *
+   * This method is slightly efficient than execute() if the prepared statement
+   * is for single use only.
+   *
    * @param callback A function to be called for each retrieved row. The function
    * must be defined with a parameter of type `const Statement&` and must
    * returns a boolean to indicate should the execution to be continued or not.
