@@ -207,10 +207,10 @@ struct Conversions<std::optional<T>> final {
 // =============================================================================
 
 /// A prepared statement.
-class Ps final {
+class Statement final {
 public:
   /// The destructor.
-  ~Ps()
+  ~Statement()
   {
     try {
       close();
@@ -220,44 +220,46 @@ public:
   }
 
   /// The constructor.
-  explicit Ps(sqlite3_stmt* const handle = nullptr)
+  explicit Statement(sqlite3_stmt* const handle = nullptr)
     : handle_{handle}
   {}
 
   /// @overload
-  Ps(sqlite3* const handle, const std::string_view sql, const unsigned int flags = 0)
+  Statement(sqlite3* const handle, const std::string_view sql,
+    const unsigned int flags = 0)
   {
     assert(handle);
-    if (const int r = sqlite3_prepare_v3(handle, sql.data(), sql.size(), flags, &handle_, nullptr); r != SQLITE_OK)
+    if (const int r = sqlite3_prepare_v3(handle, sql.data(), sql.size(), flags,
+        &handle_, nullptr); r != SQLITE_OK)
       throw Exception{r, std::string{"cannot prepare statement "}.append(sql)};
     assert(handle_);
   }
 
   /// Non-copyable.
-  Ps(const Ps&) = delete;
+  Statement(const Statement&) = delete;
 
   /// Non-copyable.
-  Ps& operator=(const Ps&) = delete;
+  Statement& operator=(const Statement&) = delete;
 
   /// The move constructor.
-  Ps(Ps&& rhs) noexcept
+  Statement(Statement&& rhs) noexcept
     : handle_{rhs.handle_}
   {
     rhs.handle_ = nullptr;
   }
 
   /// The move assignment operator.
-  Ps& operator=(Ps&& rhs) noexcept
+  Statement& operator=(Statement&& rhs) noexcept
   {
     if (this != &rhs) {
-      Ps tmp{std::move(rhs)};
+      Statement tmp{std::move(rhs)};
       swap(tmp);
     }
     return *this;
   }
 
   /// The swap operation.
-  void swap(Ps& other) noexcept
+  void swap(Statement& other) noexcept
   {
     std::swap(handle_, other.handle_);
   }
@@ -360,8 +362,8 @@ public:
    * execution (step).
    *
    * @param callback A function to be called for each retrieved row. The function
-   * must be defined with a parameter of type `const Ps&` and must returns a
-   * boolean to indicate should the execution to be continued or not.
+   * must be defined with a parameter of type `const Statement&` and must
+   * returns a boolean to indicate should the execution to be continued or not.
    *
    * @see execute().
    */
@@ -372,7 +374,7 @@ public:
     while (true) {
       switch (const int r = sqlite3_step(handle_)) {
       case SQLITE_ROW:
-        if (!callback(static_cast<const Ps&>(*this)))
+        if (!callback(static_cast<const Statement&>(*this)))
           return;
         else
           continue;
@@ -512,11 +514,11 @@ private:
 
 // =============================================================================
 
-/// A database connection.
-class Conn final {
+/// A database(-s) connection.
+class Connection final {
 public:
   /// The destructor.
-  ~Conn()
+  ~Connection()
   {
     try {
       close();
@@ -526,7 +528,7 @@ public:
   }
 
   /// The constructor.
-  explicit Conn(sqlite3* handle = nullptr)
+  explicit Connection(sqlite3* handle = nullptr)
     : handle_{handle}
   {}
 
@@ -537,7 +539,7 @@ public:
    *
    * @see https://www.sqlite.org/uri.html
    */
-  Conn(const char* const ref, const int flags)
+  Connection(const char* const ref, const int flags)
   {
     assert(ref);
     if (const int r = sqlite3_open_v2(ref, &handle_, flags, nullptr); r != SQLITE_OK)
@@ -546,40 +548,40 @@ public:
   }
 
   /// @overload
-  Conn(const std::string& ref, const int flags)
-    : Conn{ref.c_str(), flags}
+  Connection(const std::string& ref, const int flags)
+    : Connection{ref.c_str(), flags}
   {}
 
   /// @overload
-  Conn(const detail::fs::path& path, const int flags)
-    : Conn{path.c_str(), flags}
+  Connection(const detail::fs::path& path, const int flags)
+    : Connection{path.c_str(), flags}
   {}
 
   /// Non-copyable.
-  Conn(const Conn&) = delete;
+  Connection(const Connection&) = delete;
 
   /// Non-copyable.
-  Conn& operator=(const Conn&) = delete;
+  Connection& operator=(const Connection&) = delete;
 
   /// The move constructor.
-  Conn(Conn&& rhs) noexcept
+  Connection(Connection&& rhs) noexcept
     : handle_{rhs.handle_}
   {
     rhs.handle_ = nullptr;
   }
 
   /// The move assignment operator.
-  Conn& operator=(Conn&& rhs) noexcept
+  Connection& operator=(Connection&& rhs) noexcept
   {
     if (this != &rhs) {
-      Conn tmp{std::move(rhs)};
+      Connection tmp{std::move(rhs)};
       swap(tmp);
     }
     return *this;
   }
 
   /// The swap operation.
-  void swap(Conn& other) noexcept
+  void swap(Connection& other) noexcept
   {
     std::swap(handle_, other.handle_);
   }
@@ -600,19 +602,19 @@ public:
   }
 
   /**
-   * @brief Constructs the prepared statement from `sql`.
+   * @returns An instance of type Statement.
    *
-   * @see Ps::Ps().
+   * @see Statement::Statement().
    */
-  Ps prepare(const std::string_view sql, const unsigned int flags = 0)
+  Statement prepare(const std::string_view sql, const unsigned int flags = 0)
   {
-    return Ps{handle_, sql, flags};
+    return Statement{handle_, sql, flags};
   }
 
   /**
    * Executes the `sql`.
    *
-   * @see Ps::execute_once().
+   * @see Statement::execute_once().
    */
   template<typename F>
   void execute(const std::string_view sql, F&& callback)
