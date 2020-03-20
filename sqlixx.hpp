@@ -17,8 +17,8 @@
 //    misrepresented as being the original software.
 // 3. This notice may not be removed or altered from any source distribution.
 
-#ifndef DMITIGR_SQLITAPI_HPP
-#define DMITIGR_SQLITAPI_HPP
+#ifndef DMITIGR_SQLIXX_HPP
+#define DMITIGR_SQLIXX_HPP
 
 #include <sqlite3.h>
 
@@ -40,31 +40,31 @@
 #if __GNUG__
   #if (__GNUC__ >= 8)
     #include <filesystem>
-    namespace dmitigr::sqlitapi::detail {
+    namespace dmitigr::sqlixx::detail {
     namespace fs = std::filesystem;
     }
   #else
     #include <experimental/filesystem>
-    namespace dmitigr::sqlitapi::detail {
+    namespace dmitigr::sqlixx::detail {
     namespace fs = std::experimental::filesystem;
     }
   #endif
 #else
 #include <filesystem>
-namespace dmitigr::sqlitapi::detail {
+namespace dmitigr::sqlixx::detail {
 namespace fs = std::filesystem;
 }
 #endif
 
-namespace dmitigr::sqlitapi {
+namespace dmitigr::sqlixx {
 
 /// A category of SQLite errors.
 class Sqlite_error_category final : public std::error_category {
 public:
-  /// @returns The literal `dmitigr_sqlitapi_sqlite_error`.
+  /// @returns The literal `dmitigr_sqlixx_sqlite_error`.
   const char* name() const noexcept override
   {
-    return "dmitigr_sqlitapi_sqlite_error";
+    return "dmitigr_sqlixx_sqlite_error";
   }
 
   /// @returns The string that describes the error condition denoted by `ev`.
@@ -631,6 +631,6 @@ private:
   sqlite3* handle_{};
 };
 
-} // namespace dmitigr::sqlitapi
+} // namespace dmitigr::sqlixx
 
-#endif  // DMITIGR_SQLITAPI_HPP
+#endif  // DMITIGR_SQLIXX_HPP
