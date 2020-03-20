@@ -332,7 +332,15 @@ public:
     detail::check_bind(sqlite3_bind_null(handle_, index + 1));
   }
 
-  /// Binds the parameter of the specified index with the value of type `T`.
+  /**
+   * @brief Binds the parameter of the specified index with the value of type `T`.
+   *
+   * @param index A zero-based index of the parameter.
+   * @param value A value to bind. If this parameter is `lvalue`, then it's assumed
+   * that the value is a constant and does not need to be copied. If this parameter
+   * is `rvalue`, then it's assumed to be destructed after this function returns, so
+   * SQLite is required to make a private copy of the value before return.
+   */
   template<typename T>
   void bind(const int index, T&& value)
   {
