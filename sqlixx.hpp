@@ -185,13 +185,13 @@ inline void check_bind(const int r)
 }
 } // namespace detail
 
-/// The centralized "namespace" for column data conversions.
+/// The centralized "namespace" for data conversions.
 template<typename, typename = void> struct Conversions;
 
 /// The implementation of `int` conversions.
 template<>
 struct Conversions<int> final {
-  static int data(sqlite3_stmt* const handle, const int index)
+  static int result(sqlite3_stmt* const handle, const int index)
   {
     return sqlite3_column_int(handle, index);
   }
@@ -205,7 +205,7 @@ struct Conversions<int> final {
 /// The implementation of `sqlite3_int64` conversions.
 template<>
 struct Conversions<sqlite3_int64> final {
-  static sqlite3_int64 data(sqlite3_stmt* const handle, const int index)
+  static sqlite3_int64 result(sqlite3_stmt* const handle, const int index)
   {
     return sqlite3_column_int64(handle, index);
   }
@@ -219,7 +219,7 @@ struct Conversions<sqlite3_int64> final {
 /// The implementation of `double` conversions.
 template<>
 struct Conversions<double> final {
-  static double data(sqlite3_stmt* const handle, const int index)
+  static double result(sqlite3_stmt* const handle, const int index)
   {
     return sqlite3_column_double(handle, index);
   }
@@ -233,7 +233,7 @@ struct Conversions<double> final {
 /// The implementation of `Blob` conversions.
 template<>
 struct Conversions<Blob> final {
-  static Blob data(sqlite3_stmt* const handle, const int index)
+  static Blob result(sqlite3_stmt* const handle, const int index)
   {
     return Blob{sqlite3_column_blob(handle, index),
         static_cast<sqlite3_uint64>(sqlite3_column_bytes(handle, index))};
@@ -256,7 +256,7 @@ struct Conversions<T,
   std::enable_if_t<
     std::is_same_v<T, std::string> ||
     std::is_same_v<T, std::string_view>>> final {
-  static T data(sqlite3_stmt* const handle, const int index)
+  static T result(sqlite3_stmt* const handle, const int index)
   {
     return T{reinterpret_cast<const char*>(sqlite3_column_text(handle, index)),
         static_cast<typename T::size_type>(sqlite3_column_bytes(handle, index))};
@@ -275,10 +275,10 @@ struct Conversions<T,
 /// The implementation of `std::optional<T>` conversions.
 template<typename T>
 struct Conversions<std::optional<T>> final {
-  static std::optional<T> data(sqlite3_stmt* const handle, const int index)
+  static std::optional<T> result(sqlite3_stmt* const handle, const int index)
   {
     if (sqlite3_column_type(handle, index) != SQLITE_NULL)
-      return Conversions<T>::data(handle, index);
+      return Conversions<T>::result(handle, index);
     else
       return std::nullopt;
   }
@@ -589,7 +589,7 @@ public:
   }
 
   /**
-   * @returns The columnt index.
+   * @returns The column index.
    */
   int column_index_throw(const char* const name) const
   {
@@ -609,49 +609,20 @@ public:
     return sqlite3_column_name(handle_, index);
   }
 
-  /// @returns The column data size in bytes.
-  int column_data_size(const int index) const
-  {
-    assert(handle_ && (index < column_count()));
-    return sqlite3_column_bytes(handle_, index);
-  }
-
-  /// @overload
-  int column_data_size(const char* const name) const
-  {
-    return column_data_size(column_index_throw(name));
-  }
-
-  /**
-   * @returns The result data which may be zero-terminated or not,
-   * depending on its type.
-   */
-  const char* column_data(const int index) const
-  {
-    assert(handle_ && (index < column_count()));
-    return static_cast<const char*>(sqlite3_column_blob(handle_, index));
-  }
-
-  /// @overload
-  const char* column_data(const char* const name) const
-  {
-    return column_data(column_index_throw(name));
-  }
-
   /// @overload
   template<typename T>
-  T column_data(const int index) const
+  T result(const int index) const
   {
     assert(handle_ && (index < column_count()));
     using U = std::decay_t<T>;
-    return Conversions<U>::data(handle_, index);
+    return Conversions<U>::result(handle_, index);
   }
 
   /// @overload
   template<typename T>
-  T column_data(const char* const name) const
+  T result(const char* const name) const
   {
-    return column_data<T>(column_index_throw(name));
+    return result<T>(column_index_throw(name));
   }
 
   /// @}

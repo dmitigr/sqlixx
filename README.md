@@ -18,13 +18,12 @@ Any feedback are [welcome][dmitigr_mail].
 ## Example
 
 ```cpp
-#include "sqlixx.hpp"
-#include <iostream>
-
 int main()
 {
   namespace sqlixx = dmitigr::sqlixx;
-  sqlixx::Connection c{"test.db", SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE};
+  sqlixx::Connection c{"", SQLITE_OPEN_READWRITE | SQLITE_OPEN_MEMORY};
+
+  // Create the test table.
   c.execute(
     R"(
     create table if not exists tab(
@@ -35,20 +34,23 @@ int main()
     )"
   );
 
+  // Truncate the test table.
   c.execute("delete from tab");
 
+  // Populate the test table.
   auto s = c.prepare("insert into tab(id, cr, ct, cb) values(?, ?, ?, ?)");
   c.execute("begin");
-  for (int i = 0; i < 1000; ++i)
+  for (int i = 0; i < 100; ++i)
     s.execute(i, i + 1.1, std::to_string(i), sqlixx::Blob{"blob", 4});
   c.execute("end");
 
+  // Query the test table.
   c.execute([](const sqlixx::Statement& s)
   {
-    std::cout << "id: " << s.column_data<int>("id") << "\n";
-    std::cout << "cr: " << s.column_data<double>("cr") << "\n";
-    std::cout << "ct: " << s.column_data<std::string_view>("ct") << "\n";
-    const auto b = s.column_data<sqlixx::Blob>("cb");
+    std::cout << "id: " << s.result<int>("id") << "\n";
+    std::cout << "cr: " << s.result<double>("cr") << "\n";
+    std::cout << "ct: " << s.result<std::string_view>("ct") << "\n";
+    const auto b = s.result<sqlixx::Blob>("cb");
     std::cout << "cb: " << std::string_view{static_cast<const char*>(b.data()), b.size()} << "\n";
     return true;
   },
