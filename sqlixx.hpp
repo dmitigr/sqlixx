@@ -266,7 +266,7 @@ struct Conversions<T,
   static std::enable_if_t<std::is_same_v<std::decay_t<S>, T>>
   bind(sqlite3_stmt* const handle, const int index, S&& value)
   {
-    constexpr auto destr = std::is_rvalue_reference_v<S&&> ? SQLITE_TRANSIENT : SQLITE_STATIC;
+    const auto destr = std::is_rvalue_reference_v<S&&> ? SQLITE_TRANSIENT : SQLITE_STATIC;
     detail::check_bind(sqlite3_bind_text64(handle, index,
         value.data(), value.size(), destr, SQLITE_UTF8));
   }
