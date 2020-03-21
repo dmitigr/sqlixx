@@ -12,3 +12,5 @@ BROWSE
 .vs
 
 cmake-build-*
+test
+test.db

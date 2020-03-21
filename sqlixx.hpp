@@ -97,6 +97,86 @@ public:
 
 // =============================================================================
 
+/// A blob.
+struct Blob final {
+  /// An alias of deleter.
+  using Deleter = sqlite3_destructor_type;
+
+  /// The destructor.
+  ~Blob()
+  {
+    assert(deleter_ != SQLITE_TRANSIENT);
+    if (deleter_)
+      deleter_(const_cast<void*>(data_));
+  }
+
+  /// The default constructor.
+  Blob() = default;
+
+  /// The constructor.
+  Blob(const void* const data, const sqlite3_uint64 size,
+    const Deleter deleter = SQLITE_STATIC) noexcept
+    : data_{data}
+    , size_{size}
+    , deleter_{deleter}
+  {}
+
+  /// Non-copyable.
+  Blob(const Blob&) = delete;
+
+  /// Non-copyable.
+  Blob& operator=(const Blob&) = delete;
+
+  /// The move constructor.
+  Blob(Blob&& rhs) noexcept
+    : data_{rhs.data_}
+    , size_{rhs.size_}
+    , deleter_{rhs.deleter_}
+  {
+    rhs.data_ = {};
+    rhs.size_ = {};
+    rhs.deleter_ = {};
+  }
+
+  /// The move assignment operator.
+  Blob& operator=(Blob&& rhs) noexcept
+  {
+    if (this != &rhs) {
+      Blob tmp{std::move(rhs)};
+      swap(tmp);
+    }
+    return *this;
+  }
+
+  /// The swap operation.
+  void swap(Blob& other) noexcept
+  {
+    std::swap(data_, other.data_);
+    std::swap(size_, other.size_);
+    std::swap(deleter_, other.deleter_);
+  }
+
+  /// @returns The data.
+  const void* data() const noexcept { return data_; }
+
+  /// @returns The data size.
+  sqlite3_uint64 size() const noexcept { return size_; }
+
+  /// @returns The deleter.
+  Deleter deleter() const noexcept { return deleter_; }
+
+  /// The data.
+  const void* data_{};
+
+  /// The data size.
+  sqlite3_uint64 size_{};
+
+  /// The deleter.
+  Deleter deleter_{};
+};
+
+// =============================================================================
+
 namespace detail {
 inline void check_bind(const int r)
 {
@@ -106,7 +186,7 @@ inline void check_bind(const int r)
 } // namespace detail
 
 /// The centralized "namespace" for column data conversions.
-template<typename> struct Conversions;
+template<typename, typename = void> struct Conversions;
 
 /// The implementation of `int` conversions.
 template<>
@@ -150,41 +230,45 @@ struct Conversions<double> final {
   }
 };
 
-/// The implementation of `std::string` conversions.
+/// The implementation of `Blob` conversions.
 template<>
-struct Conversions<std::string> final {
-  static std::string data(sqlite3_stmt* const handle, const int index)
+struct Conversions<Blob> final {
+  static Blob data(sqlite3_stmt* const handle, const int index)
   {
-    return std::string{reinterpret_cast<const char*>(sqlite3_column_text(handle, index)),
-        static_cast<std::string::size_type>(sqlite3_column_bytes(handle, index))};
+    return Blob{sqlite3_column_blob(handle, index),
+        static_cast<sqlite3_uint64>(sqlite3_column_bytes(handle, index))};
+  }
+
+  template<typename B>
+  static std::enable_if_t<std::is_same_v<std::decay_t<B>, Blob>>
+  bind(sqlite3_stmt* const handle, const int index, B&& value)
+  {
+    const Blob::Deleter destr = value.deleter() ? value.deleter() :
+      (std::is_rvalue_reference_v<B&&> ? SQLITE_TRANSIENT : SQLITE_STATIC);
+    detail::check_bind(sqlite3_bind_blob64(handle, index,
+        value.data(), value.size(), destr));
+  }
+};
+
+/// The implementation of `std::string` and `std::string_view` conversions.
+template<typename T>
+struct Conversions<T,
+  std::enable_if_t<
+    std::is_same_v<T, std::string> ||
+    std::is_same_v<T, std::string_view>>> final {
+  static T data(sqlite3_stmt* const handle, const int index)
+  {
+    return T{reinterpret_cast<const char*>(sqlite3_column_text(handle, index)),
+        static_cast<typename T::size_type>(sqlite3_column_bytes(handle, index))};
   }
 
   template<typename S>
-  static std::enable_if_t<std::is_same_v<std::decay_t<S>, std::string>>
+  static std::enable_if_t<std::is_same_v<std::decay_t<S>, T>>
   bind(sqlite3_stmt* const handle, const int index, S&& value)
   {
     constexpr auto destr = std::is_rvalue_reference_v<S&&> ? SQLITE_TRANSIENT : SQLITE_STATIC;
     detail::check_bind(sqlite3_bind_text64(handle, index,
         value.data(), value.size(), destr, SQLITE_UTF8));
-  }
-};
-
-/// The implementation of `std::string_view` conversions.
-template<>
-struct Conversions<std::string_view> final {
-  static std::string_view data(sqlite3_stmt* const handle, const int index)
-  {
-    return std::string_view{static_cast<const char*>(sqlite3_column_blob(handle, index)),
-        static_cast<std::string_view::size_type>(sqlite3_column_bytes(handle, index))};
-  }
-
-  template<typename Sv>
-  static std::enable_if_t<std::is_same_v<std::decay_t<Sv>, std::string_view>>
-  bind(sqlite3_stmt* const handle, const int index, Sv&& value)
-  {
-    constexpr auto destr = std::is_rvalue_reference_v<Sv&&> ? SQLITE_TRANSIENT : SQLITE_STATIC;
-    detail::check_bind(sqlite3_bind_blob64(handle, index,
-        value.data(), value.size(), destr));
   }
 };
 
@@ -341,6 +425,29 @@ public:
   {
     assert(handle_ && (index < parameter_count()));
     detail::check_bind(sqlite3_bind_null(handle_, index + 1));
+  }
+
+  /// @overload
+  void bind_null(const char* const name)
+  {
+    bind_null(parameter_index_throw(name));
+  }
+
+  /**
+   * @brief Binds the parameter of the specified index with `value`.
+   *
+   * @remarks `value` is assumed to be UTF-8 encoded.
+   */
+  void bind(const int index, const char* const value)
+  {
+    assert(handle_ && (index < parameter_count()));
+    detail::check_bind(sqlite3_bind_text(handle_, index + 1, value, -1, SQLITE_STATIC));
+  }
+
+  /// @overload
+  void bind(const char* const name, const char* const value)
+  {
+    bind(parameter_index_throw(name), value);
   }
 
   /**
