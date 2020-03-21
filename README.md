@@ -50,11 +50,12 @@ int main()
   // Query the test table.
   c.execute([](const sqlixx::Statement& s)
   {
-    std::cout << "id: " << s.result<int>("id") << "\n";
-    std::cout << "cr: " << s.result<double>("cr") << "\n";
-    std::cout << "ct: " << s.result<std::string_view>("ct") << "\n";
     const auto b = s.result<sqlixx::Blob>("cb");
-    std::cout << "cb: " << std::string_view{static_cast<const char*>(b.data()), b.size()} << "\n";
+    const std::string_view cb{static_cast<const char*>(b.data()), b.size()};
+    std::cout << "id: " << s.result<int>("id") << "\n"
+              << "cr: " << s.result<double>("cr") << "\n"
+              << "ct: " << s.result<std::string_view>("ct") << "\n"
+              << "cb: " << cb << "\n";
     return true;
   },
   "select * from tab where id > ? and id < ?", 5, 10);
