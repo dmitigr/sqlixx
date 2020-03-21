@@ -18,6 +18,9 @@ Any feedback are [welcome][dmitigr_mail].
 ## Example
 
 ```cpp
+#include "sqlixx.hpp"
+#include <iostream>
+
 int main()
 {
   namespace sqlixx = dmitigr::sqlixx;
@@ -61,5 +64,7 @@ int main()
 ## Licenses and copyrights
 
 `sqlixx` itself is distributed under zlib [LICENSE](LICENSE.txt).
+
+Copyright (C) 2020 Dmitry Igrishin
 
 [dmitigr_mail]: mailto:dmitigr@gmail.com
