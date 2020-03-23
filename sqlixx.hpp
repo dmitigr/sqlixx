@@ -196,54 +196,48 @@ template<typename, typename = void> struct Conversions;
 /// The implementation of `int` conversions.
 template<>
 struct Conversions<int> final {
-  static int result(sqlite3_stmt* const handle, const int index)
-  {
-    return sqlite3_column_int(handle, index);
-  }
-
   static void bind(sqlite3_stmt* const handle, const int index, const int value)
   {
     detail::check_bind(sqlite3_bind_int(handle, index, value));
+  }
+
+  static int result(sqlite3_stmt* const handle, const int index)
+  {
+    return sqlite3_column_int(handle, index);
   }
 };
 
 /// The implementation of `sqlite3_int64` conversions.
 template<>
 struct Conversions<sqlite3_int64> final {
-  static sqlite3_int64 result(sqlite3_stmt* const handle, const int index)
-  {
-    return sqlite3_column_int64(handle, index);
-  }
-
   static void bind(sqlite3_stmt* const handle, const int index, const sqlite3_int64 value)
   {
     detail::check_bind(sqlite3_bind_int64(handle, index, value));
+  }
+
+  static sqlite3_int64 result(sqlite3_stmt* const handle, const int index)
+  {
+    return sqlite3_column_int64(handle, index);
   }
 };
 
 /// The implementation of `double` conversions.
 template<>
 struct Conversions<double> final {
-  static double result(sqlite3_stmt* const handle, const int index)
-  {
-    return sqlite3_column_double(handle, index);
-  }
-
   static void bind(sqlite3_stmt* const handle, const int index, const double value)
   {
     detail::check_bind(sqlite3_bind_double(handle, index, value));
+  }
+
+  static double result(sqlite3_stmt* const handle, const int index)
+  {
+    return sqlite3_column_double(handle, index);
   }
 };
 
 /// The implementation of `Blob` conversions.
 template<>
 struct Conversions<Blob> final {
-  static Blob result(sqlite3_stmt* const handle, const int index)
-  {
-    return Blob{sqlite3_column_blob(handle, index),
-        static_cast<sqlite3_uint64>(sqlite3_column_bytes(handle, index))};
-  }
-
   template<typename B>
   static std::enable_if_t<std::is_same_v<std::decay_t<B>, Blob>>
   bind(sqlite3_stmt* const handle, const int index, B&& value)
@@ -264,6 +258,12 @@ struct Conversions<Blob> final {
     detail::check_bind(sqlite3_bind_blob64(handle, index,
         value.data(), value.size(), destr));
   }
+
+  static Blob result(sqlite3_stmt* const handle, const int index)
+  {
+    return Blob{sqlite3_column_blob(handle, index),
+        static_cast<sqlite3_uint64>(sqlite3_column_bytes(handle, index))};
+  }
 };
 
 /// The implementation of `std::string` and `std::string_view` conversions.
@@ -272,12 +272,6 @@ struct Conversions<T,
   std::enable_if_t<
     std::is_same_v<T, std::string> ||
     std::is_same_v<T, std::string_view>>> final {
-  static T result(sqlite3_stmt* const handle, const int index)
-  {
-    return T{reinterpret_cast<const char*>(sqlite3_column_text(handle, index)),
-        static_cast<typename T::size_type>(sqlite3_column_bytes(handle, index))};
-  }
-
   template<typename S>
   static std::enable_if_t<std::is_same_v<std::decay_t<S>, T>>
   bind(sqlite3_stmt* const handle, const int index, S&& value)
@@ -286,19 +280,17 @@ struct Conversions<T,
     detail::check_bind(sqlite3_bind_text64(handle, index,
         value.data(), value.size(), destr, SQLITE_UTF8));
   }
+
+  static T result(sqlite3_stmt* const handle, const int index)
+  {
+    return T{reinterpret_cast<const char*>(sqlite3_column_text(handle, index)),
+        static_cast<typename T::size_type>(sqlite3_column_bytes(handle, index))};
+  }
 };
 
 /// The implementation of `std::optional<T>` conversions.
 template<typename T>
 struct Conversions<std::optional<T>> final {
-  static std::optional<T> result(sqlite3_stmt* const handle, const int index)
-  {
-    if (sqlite3_column_type(handle, index) != SQLITE_NULL)
-      return Conversions<T>::result(handle, index);
-    else
-      return std::nullopt;
-  }
-
   template<typename O>
   static std::enable_if_t<std::is_same_v<std::decay_t<O>, std::optional<T>>>
   bind(sqlite3_stmt* const handle, const int index, O&& value)
@@ -310,6 +302,14 @@ struct Conversions<std::optional<T>> final {
         bind(handle, index, *value);
     } else
       detail::check_bind(sqlite3_bind_null(handle, index));
+  }
+
+  static std::optional<T> result(sqlite3_stmt* const handle, const int index)
+  {
+    if (sqlite3_column_type(handle, index) != SQLITE_NULL)
+      return Conversions<T>::result(handle, index);
+    else
+      return std::nullopt;
   }
 };
 
