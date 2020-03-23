@@ -105,8 +105,7 @@ struct Blob final {
   /// The destructor.
   ~Blob()
   {
-    assert(deleter_ != SQLITE_TRANSIENT);
-    if (deleter_)
+    if (is_data_owner())
       deleter_(const_cast<void*>(data_));
   }
 
@@ -165,6 +164,12 @@ struct Blob final {
   /// @returns The deleter.
   Deleter deleter() const noexcept { return deleter_; }
 
+  /// @returns `true` if this instance is owns the data.
+  bool is_data_owner() const noexcept
+  {
+    return deleter_ && (deleter_ != SQLITE_STATIC) && (deleter_ != SQLITE_TRANSIENT);
+  }
+
   /// The data.
   const void* data_{};
 
@@ -172,7 +177,7 @@ struct Blob final {
   sqlite3_uint64 size_{};
 
   /// The deleter.
-  Deleter deleter_{};
+  Deleter deleter_{SQLITE_STATIC};
 };
 
 // =============================================================================
@@ -243,8 +248,19 @@ struct Conversions<Blob> final {
   static std::enable_if_t<std::is_same_v<std::decay_t<B>, Blob>>
   bind(sqlite3_stmt* const handle, const int index, B&& value)
   {
-    const Blob::Deleter destr = value.deleter() ? value.deleter() :
-      (std::is_rvalue_reference_v<B&&> ? SQLITE_TRANSIENT : SQLITE_STATIC);
+    const Blob::Deleter destr = [&value]
+    {
+      if constexpr (std::is_rvalue_reference_v<B&&>) {
+        if (value.is_data_owner()) {
+          const auto result = value.deleter_;
+          value = {};
+          assert(!value.is_data_owner());
+          return result;
+        } else
+          return SQLITE_STATIC;
+      } else
+        return SQLITE_STATIC;
+    }();
     detail::check_bind(sqlite3_bind_blob64(handle, index,
         value.data(), value.size(), destr));
   }
