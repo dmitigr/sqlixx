@@ -97,23 +97,37 @@ public:
 
 // =============================================================================
 
-/// A blob.
-struct Blob final {
+/// A data.
+template<typename T, unsigned char E>
+struct Data final {
+  static_assert((E == 0) || (E == SQLITE_UTF8) ||
+    (E == SQLITE_UTF16LE) || (E == SQLITE_UTF16BE) || (E == SQLITE_UTF16),
+    "invalid data encoding");
+
   /// An alias of deleter.
   using Deleter = sqlite3_destructor_type;
 
+  /// The data type.
+  using Type = T;
+
+  /// The data size type.
+  using Size = sqlite3_uint64;
+
+  /// The data encoding.
+  constexpr static unsigned char Encoding = E;
+
   /// The destructor.
-  ~Blob()
+  ~Data()
   {
     if (is_data_owner())
-      deleter_(const_cast<void*>(data_));
+      deleter_(const_cast<T*>(data_));
   }
 
   /// The default constructor.
-  Blob() = default;
+  Data() = default;
 
   /// The constructor.
-  Blob(const void* const data, const sqlite3_uint64 size,
+  Data(const T* const data, const Size size,
     const Deleter deleter = SQLITE_STATIC) noexcept
     : data_{data}
     , size_{size}
@@ -121,13 +135,13 @@ struct Blob final {
   {}
 
   /// Non-copyable.
-  Blob(const Blob&) = delete;
+  Data(const Data&) = delete;
 
   /// Non-copyable.
-  Blob& operator=(const Blob&) = delete;
+  Data& operator=(const Data&) = delete;
 
   /// The move constructor.
-  Blob(Blob&& rhs) noexcept
+  Data(Data&& rhs) noexcept
     : data_{rhs.data_}
     , size_{rhs.size_}
     , deleter_{rhs.deleter_}
@@ -138,17 +152,17 @@ struct Blob final {
   }
 
   /// The move assignment operator.
-  Blob& operator=(Blob&& rhs) noexcept
+  Data& operator=(Data&& rhs) noexcept
   {
     if (this != &rhs) {
-      Blob tmp{std::move(rhs)};
+      Data tmp{std::move(rhs)};
       swap(tmp);
     }
     return *this;
   }
 
   /// The swap operation.
-  void swap(Blob& other) noexcept
+  void swap(Data& other) noexcept
   {
     std::swap(data_, other.data_);
     std::swap(size_, other.size_);
@@ -156,10 +170,10 @@ struct Blob final {
   }
 
   /// @returns The data.
-  const void* data() const noexcept { return data_; }
+  const T* data() const noexcept { return data_; }
 
   /// @returns The data size.
-  sqlite3_uint64 size() const noexcept { return size_; }
+  Size size() const noexcept { return size_; }
 
   /// @returns The deleter.
   Deleter deleter() const noexcept { return deleter_; }
@@ -171,14 +185,29 @@ struct Blob final {
   }
 
   /// The data.
-  const void* data_{};
+  const T* data_{};
 
   /// The data size.
-  sqlite3_uint64 size_{};
+  Size size_{};
 
   /// The deleter.
   Deleter deleter_{SQLITE_STATIC};
 };
+
+/// An alias of Blob type.
+using Blob = Data<void, 0>;
+
+/// An alias of UTF8 text type.
+using Text_utf8 = Data<char, SQLITE_UTF8>;
+
+/// An alias of UTF16 text type.
+using Text_utf16 = Data<char, SQLITE_UTF16>;
+
+/// An alias of UTF16LE text type.
+using Text_utf16le = Data<char, SQLITE_UTF16LE>;
+
+/// An alias of UTF16BE text type.
+using Text_utf16be = Data<char, SQLITE_UTF16BE>;
 
 // =============================================================================
 
@@ -235,14 +264,14 @@ struct Conversions<double> final {
   }
 };
 
-/// The implementation of `Blob` conversions.
-template<>
-struct Conversions<Blob> final {
+/// The implementation of `Data` conversions.
+template<typename T, unsigned char E>
+struct Conversions<Data<T, E>> final {
   template<typename B>
-  static std::enable_if_t<std::is_same_v<std::decay_t<B>, Blob>>
+  static std::enable_if_t<std::is_same_v<std::decay_t<B>, Data<T, E>>>
   bind(sqlite3_stmt* const handle, const int index, B&& value)
   {
-    const Blob::Deleter destr = [&value]
+    const typename Data<T, E>::Deleter destr = [&value]
     {
       if constexpr (std::is_rvalue_reference_v<B&&>) {
         if (value.is_data_owner()) {
@@ -255,14 +284,31 @@ struct Conversions<Blob> final {
       } else
         return SQLITE_STATIC;
     }();
-    detail::check_bind(sqlite3_bind_blob64(handle, index,
-        value.data(), value.size(), destr));
+
+    const int br = [&]
+    {
+      if constexpr (E == 0)
+        return sqlite3_bind_blob64(handle, index, value.data(), value.size(), destr);
+      else
+        return sqlite3_bind_text64(handle, index, value.data(), value.size(), destr, E);
+    }();
+    detail::check_bind(br);
   }
 
-  static Blob result(sqlite3_stmt* const handle, const int index)
+  static Data<T, E> result(sqlite3_stmt* const handle, const int index)
   {
-    return Blob{sqlite3_column_blob(handle, index),
-        static_cast<sqlite3_uint64>(sqlite3_column_bytes(handle, index))};
+    static_assert((E == 0) || (E == SQLITE_UTF8) || (E == SQLITE_UTF16),
+      "SQLite only provides sqlite3_column_text() and sqlite3_column_text16()");
+    using R = Data<T, E>;
+    if constexpr (E == 0)
+      return R{sqlite3_column_blob(handle, index),
+        static_cast<typename R::Size>(sqlite3_column_bytes(handle, index))};
+    else if (E == SQLITE_UTF8)
+      return R{reinterpret_cast<const typename R::Type*>(sqlite3_column_text(handle, index)),
+        static_cast<typename R::Size>(sqlite3_column_bytes(handle, index))};
+    else // SQLITE_UTF16
+      return R{reinterpret_cast<const typename R::Type*>(sqlite3_column_text16(handle, index)),
+        static_cast<typename R::Size>(sqlite3_column_bytes16(handle, index))};
   }
 };
 

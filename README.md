@@ -43,8 +43,9 @@ int main()
   // Populate the test table.
   auto s = c.prepare("insert into tab(id, cr, ct, cb) values(?, ?, ?, ?)");
   c.execute("begin");
-  for (int i = 0; i < 100; ++i)
-    s.execute(i, i + 1.1, std::to_string(i), sqlixx::Blob{"blob", 4});
+  s.execute(0, 1.2, std::to_string(3), sqlixx::Blob{"four", 4});
+  s.execute(1, 2.3, std::string_view{"four", 4}, sqlixx::Blob{"five", 4});
+  s.execute(2, 3.4, sqlixx::Text_utf8{"five", 4}, sqlixx::Blob{"six", 3});
   c.execute("end");
 
   // Query the test table.
@@ -52,13 +53,17 @@ int main()
   {
     const auto b = s.result<sqlixx::Blob>("cb");
     const std::string_view cb{static_cast<const char*>(b.data()), b.size()};
+    const auto t1 = s.result<sqlixx::Text_utf8>("ct");
+    const auto t2 = s.result<std::string>("ct");
+    const auto t3 = s.result<std::string_view>("ct");
+    assert(!std::strcmp(t1.data(), t2.data()) && (t2 == t3));
     std::cout << "id: " << s.result<int>("id") << "\n"
               << "cr: " << s.result<double>("cr") << "\n"
-              << "ct: " << s.result<std::string_view>("ct") << "\n"
+              << "ct: " << t3 << "\n"
               << "cb: " << cb << "\n";
     return true;
   },
-  "select * from tab where id > ? and id < ?", 5, 10);
+  "select * from tab where id >= ? and id < ?", 0, 3);
 }
 ```
 
