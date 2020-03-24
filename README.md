@@ -1,6 +1,6 @@
 # Easy to use C++ API for SQLite
 
-`sqlixx` - is a header-only C++ API for SQLite. Just include `sqlixx.hpp`.
+`sqlixx` - is a header-only C++ API for [SQLite]. Just include `sqlixx.hpp`.
 
 To use this library, a compiler with C++17 support (such as GCC 7.5+) is required.
 
@@ -67,6 +67,11 @@ int main()
 }
 ```
 
+## TODO
+
+  - enum class Errc for errors;
+  - allow named parameters in execute().
+
 ## Licenses and copyrights
 
 `sqlixx` itself is distributed under zlib [LICENSE](LICENSE.txt).
@@ -74,3 +79,5 @@ int main()
 Copyright (C) 2020 Dmitry Igrishin
 
 [dmitigr_mail]: mailto:dmitigr@gmail.com
+
+[SQLite]: https://www.sqlite.org/
