@@ -148,7 +148,7 @@ struct Data final {
   {
     rhs.data_ = {};
     rhs.size_ = {};
-    rhs.deleter_ = {};
+    rhs.deleter_ = SQLITE_STATIC;
   }
 
   /// The move assignment operator.
@@ -167,6 +167,16 @@ struct Data final {
     std::swap(data_, other.data_);
     std::swap(size_, other.size_);
     std::swap(deleter_, other.deleter_);
+  }
+
+  /// @returns The released data.
+  T* release() noexcept
+  {
+    auto* const result = data_;
+    deleter_ = SQLITE_STATIC;
+    assert(!is_data_owner());
+    Data{}.swap(*this);
+    return result;
   }
 
   /// @returns The data.
@@ -375,7 +385,7 @@ public:
   }
 
   /// The constructor.
-  explicit Statement(sqlite3_stmt* const handle = nullptr)
+  explicit Statement(sqlite3_stmt* const handle = {})
     : handle_{handle}
   {}
 
@@ -400,7 +410,7 @@ public:
   Statement(Statement&& rhs) noexcept
     : handle_{rhs.handle_}
   {
-    rhs.handle_ = nullptr;
+    rhs.handle_ = {};
   }
 
   /// The move assignment operator.
@@ -425,13 +435,21 @@ public:
     return handle_;
   }
 
+  /// @returns The released handle.
+  sqlite3_stmt* release() noexcept
+  {
+    auto* const result = handle_;
+    handle_ = {};
+    return result;
+  }
+
   /// Closes the prepared statement.
   void close()
   {
     if (const int r = sqlite3_finalize(handle_); r != SQLITE_OK)
       throw Exception{r, "cannot close a prepared statement"};
     else
-      handle_ = nullptr;
+      handle_ = {};
   }
 
   // ---------------------------------------------------------------------------
@@ -715,7 +733,7 @@ public:
   }
 
   /// The constructor.
-  explicit Connection(sqlite3* handle = nullptr)
+  explicit Connection(sqlite3* handle = {})
     : handle_{handle}
   {}
 
@@ -754,7 +772,7 @@ public:
   Connection(Connection&& rhs) noexcept
     : handle_{rhs.handle_}
   {
-    rhs.handle_ = nullptr;
+    rhs.handle_ = {};
   }
 
   /// The move assignment operator.
@@ -779,13 +797,21 @@ public:
     return handle_;
   }
 
+  /// @returns The released handle.
+  sqlite3* release() noexcept
+  {
+    auto* const result = handle_;
+    handle_ = {};
+    return result;
+  }
+
   /// Closes the database connection.
   void close()
   {
     if (const int r = sqlite3_close(handle_); r != SQLITE_OK)
       throw Exception{r, "failed to close a database connection"};
     else
-      handle_ = nullptr;
+      handle_ = {};
   }
 
   /**
