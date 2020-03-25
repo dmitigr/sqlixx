@@ -61,7 +61,6 @@ int main()
               << "cr: " << s.result<double>("cr") << "\n"
               << "ct: " << t3 << "\n"
               << "cb: " << cb << "\n";
-    return true;
   },
   "select * from tab where id >= ? and id < ?", 0, 3);
 }

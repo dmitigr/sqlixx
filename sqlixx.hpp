@@ -371,6 +371,19 @@ struct Conversions<std::optional<T>> final {
 
 // =============================================================================
 
+class Statement;
+
+namespace detail {
+template<typename F> constexpr
+std::enable_if_t<std::is_invocable_v<F, const Statement&>, bool>
+is_valid_result_callback()
+{
+  using R = std::invoke_result_t<F, const Statement&>;
+  return std::is_invocable_r_v<bool, F, const Statement&> ||
+    (std::is_invocable_v<F, const Statement&> && std::is_same_v<R, void>);
+}
+} // namespace detail
+
 /// A prepared statement.
 class Statement final {
 public:
@@ -578,8 +591,7 @@ public:
   /// @{
 
   /**
-   * @brief Executes the prepared statement and invalidates it for a subsequent
-   * execution (step).
+   * @brief Executes the prepared statement and invalidates it.
    *
    * This method is slightly efficient than execute() if the prepared statement
    * is for single use only.
@@ -591,18 +603,22 @@ public:
    * @see execute().
    */
   template<typename F, typename ... Types>
-  std::enable_if_t<std::is_invocable_r_v<bool, F, const Statement&>>
+  std::enable_if_t<detail::is_valid_result_callback<F>()>
   execute_once(F&& callback, Types&& ... values)
   {
+    using R = std::invoke_result_t<F, const Statement&>;
     assert(handle_);
     bind_many(std::forward<Types>(values)...);
     while (true) {
       switch (const int r = sqlite3_step(handle_)) {
       case SQLITE_ROW:
-        if (!callback(static_cast<const Statement&>(*this)))
-          return;
-        else
-          continue;
+        if constexpr (!std::is_same_v<R, void>) {
+          if (!callback(static_cast<const Statement&>(*this)))
+            return;
+        } else {
+          callback(static_cast<const Statement&>(*this));
+        }
+        continue;
       case SQLITE_OK: // just in case
         [[fallthrough]];
       case SQLITE_DONE:
@@ -625,7 +641,7 @@ public:
    * re-executed state.
    */
   template<typename F, typename ... Types>
-  std::enable_if_t<std::is_invocable_r_v<bool, F, const Statement&>>
+  std::enable_if_t<detail::is_valid_result_callback<F>()>
   execute(F&& callback, Types&& ... values)
   {
     execute_once(std::forward<F>(callback), std::forward<Types>(values)...);
@@ -830,7 +846,7 @@ public:
    * @see Statement::execute_once().
    */
   template<typename F, typename ... Types>
-  std::enable_if_t<std::is_invocable_r_v<bool, F, const Statement&>>
+  std::enable_if_t<detail::is_valid_result_callback<F>()>
   execute(F&& callback, const std::string_view sql, Types&& ... values)
   {
     assert(handle_);
