@@ -374,14 +374,30 @@ struct Conversions<std::optional<T>> final {
 class Statement;
 
 namespace detail {
-template<typename F> constexpr
-std::enable_if_t<std::is_invocable_v<F, const Statement&>, bool>
-is_valid_result_callback()
-{
-  using R = std::invoke_result_t<F, const Statement&>;
-  return std::is_invocable_r_v<bool, F, const Statement&> ||
-    (std::is_invocable_v<F, const Statement&> && std::is_same_v<R, void>);
-}
+template<typename F, typename = void>
+struct Execute_callback_traits final {
+  constexpr static bool is_valid = false;
+};
+
+template<typename F>
+struct Execute_callback_traits<F,
+  std::enable_if_t<std::is_invocable_v<F, const Statement&>>> final {
+  using Result = std::invoke_result_t<F, const Statement&>;
+  constexpr static bool is_result_void = std::is_same_v<Result, void>;
+  constexpr static bool is_valid =
+    std::is_invocable_r_v<bool, F, const Statement&> || is_result_void;
+  constexpr static bool has_error_parameter = false;
+};
+
+template<typename F>
+struct Execute_callback_traits<F,
+  std::enable_if_t<std::is_invocable_v<F, const Statement&, int>>> final {
+  using Result = std::invoke_result_t<F, const Statement&, int>;
+  constexpr static bool is_result_void = std::is_same_v<Result, void>;
+  constexpr static bool is_valid =
+    std::is_invocable_r_v<bool, F, const Statement&, int> || is_result_void;
+  constexpr static bool has_error_parameter = true;
+};
 } // namespace detail
 
 /// A prepared statement.
@@ -596,35 +612,54 @@ public:
    * This method is slightly efficient than execute() if the prepared statement
    * is for single use only.
    *
-   * @param callback A function to be called for each retrieved row. The function
-   * must be defined with a parameter of type `const Statement&` and must
-   * returns a boolean to indicate should the execution to be continued or not.
+   * @param callback A function to be called for each retrieved row. The callback:
+   *   -# can be defined with a parameter of type `const Statement&`. The exception
+   *   will be thrown on error in this case.
+   *   -# can be defined with two parameters of type `const Statement&` and `int`.
+   *   In case of error an error code will be passed as the second argument of
+   *   the callback instead of throwing exception and execution will be stopped
+   *   after callback returns. In case of success, `0` will be passed as the second
+   *   argument of the callback.
+   *   -# can return a value convertible to `bool` to indicate should the execution
+   *   to be continued after the callback returns or not;
+   *   -# can return `void` to indicate that execution must be proceed until a
+   *   completion or an error.
    *
    * @see execute().
    */
   template<typename F, typename ... Types>
-  std::enable_if_t<detail::is_valid_result_callback<F>()>
+  std::enable_if_t<detail::Execute_callback_traits<F>::is_valid>
   execute_once(F&& callback, Types&& ... values)
   {
-    using R = std::invoke_result_t<F, const Statement&>;
+    using Traits = detail::Execute_callback_traits<F>;
     assert(handle_);
     bind_many(std::forward<Types>(values)...);
     while (true) {
       switch (const int r = sqlite3_step(handle_)) {
       case SQLITE_ROW:
-        if constexpr (!std::is_same_v<R, void>) {
-          if (!callback(static_cast<const Statement&>(*this)))
-            return;
+        if constexpr (!Traits::is_result_void) {
+          if constexpr (!Traits::has_error_parameter) {
+            if (!callback(static_cast<const Statement&>(*this)))
+              return;
+          } else {
+            if (!callback(static_cast<const Statement&>(*this), 0))
+              return;
+          }
         } else {
-          callback(static_cast<const Statement&>(*this));
+          if constexpr (!Traits::has_error_parameter)
+            callback(static_cast<const Statement&>(*this));
+          else
+            callback(static_cast<const Statement&>(*this), 0);
         }
         continue;
-      case SQLITE_OK: // just in case
-        [[fallthrough]];
       case SQLITE_DONE:
         return;
       default:
-        throw Exception(r, "failed to execute a prepared statement");
+        if constexpr (Traits::has_error_parameter) {
+          callback(static_cast<const Statement&>(*this), r);
+          return;
+        } else
+          throw Exception(r, "failed to execute a prepared statement");
       }
     }
   }
@@ -641,7 +676,7 @@ public:
    * re-executed state.
    */
   template<typename F, typename ... Types>
-  std::enable_if_t<detail::is_valid_result_callback<F>()>
+  std::enable_if_t<detail::Execute_callback_traits<F>::is_valid>
   execute(F&& callback, Types&& ... values)
   {
     execute_once(std::forward<F>(callback), std::forward<Types>(values)...);
@@ -846,7 +881,7 @@ public:
    * @see Statement::execute_once().
    */
   template<typename F, typename ... Types>
-  std::enable_if_t<detail::is_valid_result_callback<F>()>
+  std::enable_if_t<detail::Execute_callback_traits<F>::is_valid>
   execute(F&& callback, const std::string_view sql, Types&& ... values)
   {
     assert(handle_);
