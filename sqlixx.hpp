@@ -896,6 +896,17 @@ public:
     execute([](const auto&){ return true; }, sql, std::forward<Types>(values)...);
   }
 
+  /**
+   * @returns `true` if this connection is not in autocommit mode, or `false`
+   * otherwise. Autocommit mode is disabled by a `BEGIN` command and re-enabled
+   * by a `COMMIT` or `ROLLBACK` commands.
+   */
+  bool is_transaction_active() const noexcept
+  {
+    assert(handle_);
+    return (sqlite3_get_autocommit(handle_) == 0);
+  }
+
 private:
   sqlite3* handle_{};
 };
