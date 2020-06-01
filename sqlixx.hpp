@@ -35,18 +35,12 @@
 #include <type_traits>
 #include <utility>
 
-#if __GNUG__
-  #if (__GNUC__ >= 8)
-    #include <filesystem>
-    namespace dmitigr::sqlixx::detail {
-    namespace std_filesystem = std::filesystem;
-    }
-  #else
-    #include <experimental/filesystem>
-    namespace dmitigr::sqlixx::detail {
-    namespace std_filesystem = std::experimental::filesystem;
-    }
-  #endif
+#if (defined(__clang__) && (__clang_major__ < 7)) || \
+    (defined(__GNUG__)  && (__GNUC__ < 8))
+#include <experimental/filesystem>
+namespace dmitigr::sqlixx::detail {
+namespace std_filesystem = std::experimental::filesystem;
+}
 #else
 #include <filesystem>
 namespace dmitigr::sqlixx::detail {
