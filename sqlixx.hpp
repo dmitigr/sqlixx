@@ -851,6 +851,12 @@ public:
     return result;
   }
 
+  /// @returns `true` if this object keeps handle, or `false` otherwise.
+  explicit operator bool() const noexcept
+  {
+    return handle_;
+  }
+
   /// Closes the database connection.
   void close()
   {
