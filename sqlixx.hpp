@@ -458,6 +458,12 @@ public:
     return handle_;
   }
 
+  /// @returns `true` if this object keeps handle, or `false` otherwise.
+  explicit operator bool() const noexcept
+  {
+    return handle_;
+  }
+
   /// @returns The released handle.
   sqlite3_stmt* release() noexcept
   {
@@ -843,18 +849,18 @@ public:
     return handle_;
   }
 
+  /// @returns `true` if this object keeps handle, or `false` otherwise.
+  explicit operator bool() const noexcept
+  {
+    return handle_;
+  }
+
   /// @returns The released handle.
   sqlite3* release() noexcept
   {
     auto* const result = handle_;
     handle_ = {};
     return result;
-  }
-
-  /// @returns `true` if this object keeps handle, or `false` otherwise.
-  explicit operator bool() const noexcept
-  {
-    return handle_;
   }
 
   /// Closes the database connection.
