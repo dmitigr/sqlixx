@@ -625,10 +625,12 @@ public:
    *   -# can return `void` to indicate that execution must be proceed until a
    *   completion or an error.
    *
+   * @returns The result of `sqlite3_step()`.
+   *
    * @see execute().
    */
   template<typename F, typename ... Types>
-  std::enable_if_t<detail::Execute_callback_traits<F>::is_valid>
+  std::enable_if_t<detail::Execute_callback_traits<F>::is_valid, int>
   execute_once(F&& callback, Types&& ... values)
   {
     using Traits = detail::Execute_callback_traits<F>;
@@ -640,25 +642,25 @@ public:
         if constexpr (!Traits::is_result_void) {
           if constexpr (!Traits::has_error_parameter) {
             if (!callback(static_cast<const Statement&>(*this)))
-              return;
+              return r;
           } else {
-            if (!callback(static_cast<const Statement&>(*this), 0))
-              return;
+            if (!callback(static_cast<const Statement&>(*this), r))
+              return r;
           }
         } else {
           if constexpr (!Traits::has_error_parameter)
             callback(static_cast<const Statement&>(*this));
           else
-            callback(static_cast<const Statement&>(*this), 0);
+            callback(static_cast<const Statement&>(*this), r);
         }
         continue;
       case SQLITE_DONE:
-        return;
+        return r;
       default:
         sqlite3_reset(handle_);
         if constexpr (Traits::has_error_parameter) {
           callback(static_cast<const Statement&>(*this), r);
-          return;
+          return r;
         } else
           throw Exception(r, "failed to execute a prepared statement");
       }
@@ -667,9 +669,9 @@ public:
 
   /// @overload
   template<typename ... Types>
-  void execute_once(Types&& ... values)
+  int execute_once(Types&& ... values)
   {
-    execute_once([](const auto&){ return true; }, std::forward<Types>(values)...);
+    return execute_once([](const auto&){ return true; }, std::forward<Types>(values)...);
   }
 
   /**
@@ -677,16 +679,17 @@ public:
    * re-executed state.
    */
   template<typename F, typename ... Types>
-  std::enable_if_t<detail::Execute_callback_traits<F>::is_valid>
+  std::enable_if_t<detail::Execute_callback_traits<F>::is_valid, int>
   execute(F&& callback, Types&& ... values)
   {
-    execute_once(std::forward<F>(callback), std::forward<Types>(values)...);
+    const int r = execute_once(std::forward<F>(callback), std::forward<Types>(values)...);
     sqlite3_reset(handle_);
+    return r;
   }
 
   /// @overload
   template<typename ... Types>
-  void execute(Types&& ... values)
+  int execute(Types&& ... values)
   {
     return execute([](const auto&){ return true; }, std::forward<Types>(values)...);
   }
