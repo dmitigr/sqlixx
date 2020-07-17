@@ -26,6 +26,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstring>
+#include <exception>
 #include <new>
 #include <optional>
 #include <stdexcept>
@@ -84,6 +85,11 @@ inline Sqlite_error_category sqlite_error_category;
 class Exception final : public std::system_error {
 public:
   /// The constructor.
+  explicit Exception(const int ev)
+    : system_error{ev, sqlite_error_category}
+  {}
+
+  /// @overload
   Exception(const int ev, const std::string& what)
     : system_error{ev, sqlite_error_category, what}
   {}
@@ -914,6 +920,41 @@ public:
   {
     assert(handle_);
     return (sqlite3_get_autocommit(handle_) == 0);
+  }
+
+  /**
+   * Calls the `callback`.
+   *
+   * If the call of `callback` fails with exception and there is an active
+   * transaction, an attempt is made to rollback this transaction. If this
+   * attempt is successful, the exception thrown by `callback` is rethrown
+   * as is, otherwise the exception thrown by `callback` is rethrown with
+   * a nested exception of type `Exception`.
+   *
+   * @tparam F A type of callback.
+   */
+  template<typename F>
+  void with_auto_rollback(F&& callback)
+  {
+    try {
+      callback();
+    } catch (...) {
+      if (is_transaction_active()) {
+        int rollback_failure{SQLITE_OK};
+        try {
+          execute("rollback");
+        } catch (const Exception& e) {
+          rollback_failure = e.code().value();
+        } catch (...) {
+          rollback_failure = SQLITE_ERROR;
+        }
+        if (rollback_failure == SQLITE_OK)
+          throw;
+        else
+          std::throw_with_nested(Exception{rollback_failure});
+      } else
+        throw;
+    }
   }
 
 private:
