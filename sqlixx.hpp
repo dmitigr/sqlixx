@@ -934,10 +934,10 @@ public:
    * @tparam F A type of callback.
    */
   template<typename F>
-  void with_auto_rollback(F&& callback)
+  auto with_auto_rollback(F&& callback)
   {
     try {
-      callback();
+      return callback();
     } catch (...) {
       if (is_transaction_active()) {
         int rollback_failure{SQLITE_OK};
