@@ -934,7 +934,7 @@ public:
    * @tparam F A type of callback.
    */
   template<typename F>
-  auto with_auto_rollback(F&& callback)
+  auto with_rollback_on_error(F&& callback)
   {
     try {
       return callback();
