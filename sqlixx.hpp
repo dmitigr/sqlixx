@@ -923,7 +923,7 @@ public:
   }
 
   /**
-   * Calls the `callback`.
+   * @brief Calls the `callback`.
    *
    * If the call of `callback` fails with exception and there is an active
    * transaction, an attempt is made to rollback this transaction. If this
