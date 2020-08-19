@@ -613,10 +613,7 @@ public:
   /// @{
 
   /**
-   * @brief Executes the prepared statement and invalidates it.
-   *
-   * This method is slightly efficient than execute() if the prepared statement
-   * is for single use only.
+   * @brief Executes the prepared statement.
    *
    * @param callback A function to be called for each retrieved row. The callback:
    *   -# can be defined with a parameter of type `const Statement&`. The exception
@@ -632,65 +629,13 @@ public:
    *   completion or an error.
    *
    * @returns The result of `sqlite3_step()`.
-   *
-   * @see execute().
-   */
-  template<typename F, typename ... Types>
-  std::enable_if_t<detail::Execute_callback_traits<F>::is_valid, int>
-  execute_once(F&& callback, Types&& ... values)
-  {
-    using Traits = detail::Execute_callback_traits<F>;
-    assert(handle_);
-    bind_many(std::forward<Types>(values)...);
-    while (true) {
-      switch (const int r = sqlite3_step(handle_)) {
-      case SQLITE_ROW:
-        if constexpr (!Traits::is_result_void) {
-          if constexpr (!Traits::has_error_parameter) {
-            if (!callback(static_cast<const Statement&>(*this)))
-              return r;
-          } else {
-            if (!callback(static_cast<const Statement&>(*this), r))
-              return r;
-          }
-        } else {
-          if constexpr (!Traits::has_error_parameter)
-            callback(static_cast<const Statement&>(*this));
-          else
-            callback(static_cast<const Statement&>(*this), r);
-        }
-        continue;
-      case SQLITE_DONE:
-        return r;
-      default:
-        sqlite3_reset(handle_);
-        if constexpr (Traits::has_error_parameter) {
-          callback(static_cast<const Statement&>(*this), r);
-          return r;
-        } else
-          throw Exception(r, "failed to execute a prepared statement");
-      }
-    }
-  }
-
-  /// @overload
-  template<typename ... Types>
-  int execute_once(Types&& ... values)
-  {
-    return execute_once([](const auto&){ return true; }, std::forward<Types>(values)...);
-  }
-
-  /**
-   * @brief Executes the prepared statement and resets it to the ready to be
-   * re-executed state.
    */
   template<typename F, typename ... Types>
   std::enable_if_t<detail::Execute_callback_traits<F>::is_valid, int>
   execute(F&& callback, Types&& ... values)
   {
-    const int r = execute_once(std::forward<F>(callback), std::forward<Types>(values)...);
     sqlite3_reset(handle_);
-    return r;
+    return execute_once(std::forward<F>(callback), std::forward<Types>(values)...);
   }
 
   /// @overload
@@ -769,12 +714,57 @@ public:
   /// @}
 
 private:
+  friend Connection;
+
   sqlite3_stmt* handle_{};
 
   template<std::size_t ... I, typename ... Types>
   void bind_many__(std::index_sequence<I...>, Types&& ... values)
   {
     (bind(static_cast<int>(I), std::forward<Types>(values)), ...);
+  }
+
+  template<typename F, typename ... Types>
+  std::enable_if_t<detail::Execute_callback_traits<F>::is_valid, int>
+  execute_once(F&& callback, Types&& ... values)
+  {
+    using Traits = detail::Execute_callback_traits<F>;
+    assert(handle_);
+    bind_many(std::forward<Types>(values)...);
+    while (true) {
+      switch (const int r = sqlite3_step(handle_)) {
+      case SQLITE_ROW:
+        if constexpr (!Traits::is_result_void) {
+          if constexpr (!Traits::has_error_parameter) {
+            if (!callback(static_cast<const Statement&>(*this)))
+              return r;
+          } else {
+            if (!callback(static_cast<const Statement&>(*this), r))
+              return r;
+          }
+        } else {
+          if constexpr (!Traits::has_error_parameter)
+            callback(static_cast<const Statement&>(*this));
+          else
+            callback(static_cast<const Statement&>(*this), r);
+        }
+        continue;
+      case SQLITE_DONE:
+        return r;
+      default:
+        if constexpr (Traits::has_error_parameter) {
+          callback(static_cast<const Statement&>(*this), r);
+          return r;
+        } else
+          throw Exception(r, "failed to execute a prepared statement");
+      }
+    }
+  }
+
+  template<typename ... Types>
+  int execute_once(Types&& ... values)
+  {
+    return execute_once([](const auto&){ return true; }, std::forward<Types>(values)...);
   }
 };
 
@@ -894,7 +884,7 @@ public:
   /**
    * Executes the `sql`.
    *
-   * @see Statement::execute_once().
+   * @see Statement::execute().
    */
   template<typename F, typename ... Types>
   std::enable_if_t<detail::Execute_callback_traits<F>::is_valid>
