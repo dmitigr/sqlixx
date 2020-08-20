@@ -661,8 +661,10 @@ public:
         }
         continue;
       case SQLITE_DONE:
+        reset();
         return r;
       default:
+        reset();
         if constexpr (Traits::has_error_parameter) {
           callback(static_cast<const Statement&>(*this), r);
           return r;
