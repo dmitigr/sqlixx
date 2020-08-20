@@ -628,14 +628,48 @@ public:
    *   -# can return `void` to indicate that execution must be proceed until a
    *   completion or an error.
    *
+   * @remarks If the returned value is `SQLITE_DONE` then `reset()` should be called
+   * in order to make the statement ready for execution again.
+   *
    * @returns The result of `sqlite3_step()`.
+   *
+   * @see reset().
    */
   template<typename F, typename ... Types>
   std::enable_if_t<detail::Execute_callback_traits<F>::is_valid, int>
   execute(F&& callback, Types&& ... values)
   {
-    sqlite3_reset(handle_);
-    return execute_once(std::forward<F>(callback), std::forward<Types>(values)...);
+    using Traits = detail::Execute_callback_traits<F>;
+    assert(handle_);
+    bind_many(std::forward<Types>(values)...);
+    while (true) {
+      switch (const int r = sqlite3_step(handle_)) {
+      case SQLITE_ROW:
+        if constexpr (!Traits::is_result_void) {
+          if constexpr (!Traits::has_error_parameter) {
+            if (!callback(static_cast<const Statement&>(*this)))
+              return r;
+          } else {
+            if (!callback(static_cast<const Statement&>(*this), r))
+              return r;
+          }
+        } else {
+          if constexpr (!Traits::has_error_parameter)
+            callback(static_cast<const Statement&>(*this));
+          else
+            callback(static_cast<const Statement&>(*this), r);
+        }
+        continue;
+      case SQLITE_DONE:
+        return r;
+      default:
+        if constexpr (Traits::has_error_parameter) {
+          callback(static_cast<const Statement&>(*this), r);
+          return r;
+        } else
+          throw Exception(r, "failed to execute a prepared statement");
+      }
+    }
   }
 
   /// @overload
@@ -643,6 +677,12 @@ public:
   int execute(Types&& ... values)
   {
     return execute([](const auto&){ return true; }, std::forward<Types>(values)...);
+  }
+
+  /// Resets the statement back to its initial state, ready to be executed.
+  int reset()
+  {
+    return sqlite3_reset(handle_);
   }
 
   /// @}
@@ -714,57 +754,12 @@ public:
   /// @}
 
 private:
-  friend Connection;
-
   sqlite3_stmt* handle_{};
 
   template<std::size_t ... I, typename ... Types>
   void bind_many__(std::index_sequence<I...>, Types&& ... values)
   {
     (bind(static_cast<int>(I), std::forward<Types>(values)), ...);
-  }
-
-  template<typename F, typename ... Types>
-  std::enable_if_t<detail::Execute_callback_traits<F>::is_valid, int>
-  execute_once(F&& callback, Types&& ... values)
-  {
-    using Traits = detail::Execute_callback_traits<F>;
-    assert(handle_);
-    bind_many(std::forward<Types>(values)...);
-    while (true) {
-      switch (const int r = sqlite3_step(handle_)) {
-      case SQLITE_ROW:
-        if constexpr (!Traits::is_result_void) {
-          if constexpr (!Traits::has_error_parameter) {
-            if (!callback(static_cast<const Statement&>(*this)))
-              return r;
-          } else {
-            if (!callback(static_cast<const Statement&>(*this), r))
-              return r;
-          }
-        } else {
-          if constexpr (!Traits::has_error_parameter)
-            callback(static_cast<const Statement&>(*this));
-          else
-            callback(static_cast<const Statement&>(*this), r);
-        }
-        continue;
-      case SQLITE_DONE:
-        return r;
-      default:
-        if constexpr (Traits::has_error_parameter) {
-          callback(static_cast<const Statement&>(*this), r);
-          return r;
-        } else
-          throw Exception(r, "failed to execute a prepared statement");
-      }
-    }
-  }
-
-  template<typename ... Types>
-  int execute_once(Types&& ... values)
-  {
-    return execute_once([](const auto&){ return true; }, std::forward<Types>(values)...);
   }
 };
 
@@ -891,7 +886,7 @@ public:
   execute(F&& callback, const std::string_view sql, Types&& ... values)
   {
     assert(handle_);
-    prepare(sql).execute_once(std::forward<F>(callback), std::forward<Types>(values)...);
+    prepare(sql).execute(std::forward<F>(callback), std::forward<Types>(values)...);
   }
 
   /// @overload
