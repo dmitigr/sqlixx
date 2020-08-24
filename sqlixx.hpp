@@ -627,9 +627,12 @@ public:
    *   to be continued after the callback returns or not;
    *   -# can return `void` to indicate that execution must be proceed until a
    *   completion or an error.
+   * @param values Values to bind with parameters. Binding will take place if this
+   * method is never been called before for this instance or if the last value it
+   * return was `SQLITE_DONE`.
    *
-   * @remarks If the returned value is `SQLITE_DONE` then `reset()` should be called
-   * in order to make the statement ready for execution again.
+   * @remarks If the last value of this method was `SQLITE_DONE` then `reset()`
+   * will be called automatically.
    *
    * @returns The result of `sqlite3_step()`.
    *
@@ -639,37 +642,41 @@ public:
   std::enable_if_t<detail::Execute_callback_traits<F>::is_valid, int>
   execute(F&& callback, Types&& ... values)
   {
-    using Traits = detail::Execute_callback_traits<F>;
     assert(handle_);
-    bind_many(std::forward<Types>(values)...);
+
+    if (last_step_result_ == SQLITE_DONE)
+      reset();
+
+    if (last_step_result_ < 0 || last_step_result_ == SQLITE_DONE)
+      bind_many(std::forward<Types>(values)...);
+
     while (true) {
-      switch (const int r = sqlite3_step(handle_)) {
+      using Traits = detail::Execute_callback_traits<F>;
+      switch (last_step_result_ = sqlite3_step(handle_)) {
       case SQLITE_ROW:
         if constexpr (!Traits::is_result_void) {
           if constexpr (!Traits::has_error_parameter) {
             if (!callback(static_cast<const Statement&>(*this)))
-              return r;
+              return last_step_result_;
           } else {
-            if (!callback(static_cast<const Statement&>(*this), r))
-              return r;
+            if (!callback(static_cast<const Statement&>(*this), last_step_result_))
+              return last_step_result_;
           }
         } else {
           if constexpr (!Traits::has_error_parameter)
             callback(static_cast<const Statement&>(*this));
           else
-            callback(static_cast<const Statement&>(*this), r);
+            callback(static_cast<const Statement&>(*this), last_step_result_);
         }
         continue;
       case SQLITE_DONE:
-        reset();
-        return r;
+        return last_step_result_;
       default:
-        reset();
         if constexpr (Traits::has_error_parameter) {
-          callback(static_cast<const Statement&>(*this), r);
-          return r;
+          callback(static_cast<const Statement&>(*this), last_step_result_);
+          return last_step_result_;
         } else
-          throw Exception(r, "failed to execute a prepared statement");
+          throw Exception{last_step_result_, "failed to execute a prepared statement"};
       }
     }
   }
@@ -756,6 +763,7 @@ public:
   /// @}
 
 private:
+  int last_step_result_{-1};
   sqlite3_stmt* handle_{};
 
   template<std::size_t ... I, typename ... Types>
