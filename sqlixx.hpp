@@ -222,10 +222,12 @@ using Text_utf16be = Data<char, SQLITE_UTF16BE>;
 // =============================================================================
 
 namespace detail {
-inline void check_bind(const int r)
+inline void check_bind(sqlite3_stmt* const handle, const int r)
 {
+  assert(handle);
   if (r != SQLITE_OK)
-    throw Exception{r, "cannot bind a prepared statement parameter"};
+    throw Exception{r, std::string{"cannot bind a prepared statement parameter"}
+      .append(" (").append(sqlite3_errmsg(sqlite3_db_handle(handle))).append(")")};
 }
 } // namespace detail
 
@@ -237,7 +239,7 @@ template<>
 struct Conversions<int> final {
   static void bind(sqlite3_stmt* const handle, const int index, const int value)
   {
-    detail::check_bind(sqlite3_bind_int(handle, index, value));
+    detail::check_bind(handle, sqlite3_bind_int(handle, index, value));
   }
 
   static int result(sqlite3_stmt* const handle, const int index)
@@ -251,7 +253,7 @@ template<>
 struct Conversions<sqlite3_int64> final {
   static void bind(sqlite3_stmt* const handle, const int index, const sqlite3_int64 value)
   {
-    detail::check_bind(sqlite3_bind_int64(handle, index, value));
+    detail::check_bind(handle, sqlite3_bind_int64(handle, index, value));
   }
 
   static sqlite3_int64 result(sqlite3_stmt* const handle, const int index)
@@ -265,7 +267,7 @@ template<>
 struct Conversions<double> final {
   static void bind(sqlite3_stmt* const handle, const int index, const double value)
   {
-    detail::check_bind(sqlite3_bind_double(handle, index, value));
+    detail::check_bind(handle, sqlite3_bind_double(handle, index, value));
   }
 
   static double result(sqlite3_stmt* const handle, const int index)
@@ -302,7 +304,7 @@ struct Conversions<Data<T, E>> final {
       else
         return sqlite3_bind_text64(handle, index, value.data(), value.size(), destr, E);
     }();
-    detail::check_bind(br);
+    detail::check_bind(handle, br);
   }
 
   static Data<T, E> result(sqlite3_stmt* const handle, const int index)
@@ -333,8 +335,8 @@ struct Conversions<T,
   bind(sqlite3_stmt* const handle, const int index, S&& value)
   {
     const auto destr = std::is_rvalue_reference_v<S&&> ? SQLITE_TRANSIENT : SQLITE_STATIC;
-    detail::check_bind(sqlite3_bind_text64(handle, index,
-        value.data(), value.size(), destr, SQLITE_UTF8));
+    detail::check_bind(handle, sqlite3_bind_text64(handle,
+      index, value.data(), value.size(), destr, SQLITE_UTF8));
   }
 
   static T result(sqlite3_stmt* const handle, const int index)
@@ -357,7 +359,7 @@ struct Conversions<std::optional<T>> final {
       else
         bind(handle, index, *value);
     } else
-      detail::check_bind(sqlite3_bind_null(handle, index));
+      detail::check_bind(handle, sqlite3_bind_null(handle, index));
   }
 
   static std::optional<T> result(sqlite3_stmt* const handle, const int index)
@@ -425,7 +427,8 @@ public:
     assert(handle);
     if (const int r = sqlite3_prepare_v3(handle, sql.data(), sql.size(), flags,
         &handle_, nullptr); r != SQLITE_OK)
-      throw Exception{r, std::string{"cannot prepare statement "}.append(sql)};
+      throw Exception{r, std::string{"cannot prepare statement "}.append(sql)
+        .append(" (").append(sqlite3_errmsg(handle)).append(")")};
     assert(handle_);
   }
 
@@ -532,14 +535,14 @@ public:
   void bind_null()
   {
     assert(handle_);
-    detail::check_bind(sqlite3_clear_bindings(handle_));
+    detail::check_bind(handle_, sqlite3_clear_bindings(handle_));
   }
 
   /// Binds the parameter of the specified index with NULL.
   void bind_null(const int index)
   {
     assert(handle_ && (index < parameter_count()));
-    detail::check_bind(sqlite3_bind_null(handle_, index + 1));
+    detail::check_bind(handle_, sqlite3_bind_null(handle_, index + 1));
   }
 
   /// @overload
@@ -556,7 +559,7 @@ public:
   void bind(const int index, const char* const value)
   {
     assert(handle_ && (index < parameter_count()));
-    detail::check_bind(sqlite3_bind_text(handle_, index + 1, value, -1, SQLITE_STATIC));
+    detail::check_bind(handle_, sqlite3_bind_text(handle_, index + 1, value, -1, SQLITE_STATIC));
   }
 
   /// @overload
@@ -676,7 +679,8 @@ public:
           callback(static_cast<const Statement&>(*this), last_step_result_);
           return last_step_result_;
         } else
-          throw Exception{last_step_result_, "failed to execute a prepared statement"};
+          throw Exception{last_step_result_, std::string{"failed to execute a prepared statement"}
+            .append(" (").append(sqlite3_errmsg(sqlite3_db_handle(handle_))).append(")")};
       }
     }
   }
@@ -803,8 +807,12 @@ public:
   Connection(const char* const ref, const int flags)
   {
     assert(ref);
-    if (const int r = sqlite3_open_v2(ref, &handle_, flags, nullptr); r != SQLITE_OK)
-      throw Exception{r, sqlite3_errmsg(handle_)};
+    if (const int r = sqlite3_open_v2(ref, &handle_, flags, nullptr); r != SQLITE_OK) {
+      if (handle_)
+        throw Exception{r, sqlite3_errmsg(handle_)};
+      else
+        throw std::bad_alloc{};
+    }
     assert(handle_);
   }
 
