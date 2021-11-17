@@ -1,5 +1,5 @@
 // -*- C++ -*-
-// Copyright (C) 2020 Dmitry Igrishin
+// Copyright (C) 2021 Dmitry Igrishin
 //
 // This software is provided 'as-is', without any express or implied
 // warranty. In no event will the authors be held liable for any damages
@@ -16,9 +16,15 @@
 // 2. Altered source versions must be plainly marked as such, and must not be
 //    misrepresented as being the original software.
 // 3. This notice may not be removed or altered from any source distribution.
+//
+// Dmitry Igrishin
+// dmitigr@gmail.com
 
-#include "sqlixx.hpp"
+#include "../src/error.hpp"
+#include "../src/sqlixx.hpp"
 #include <iostream>
+
+#define ASSERT(a) DMITIGR_ASSERT(a)
 
 int main()
 {
@@ -55,7 +61,7 @@ int main()
     const auto t1 = s.result<sqlixx::Text_utf8>("ct");
     const auto t2 = s.result<std::string>("ct");
     const auto t3 = s.result<std::string_view>("ct");
-    assert(!std::strcmp(t1.data(), t2.data()) && (t2 == t3));
+    ASSERT(!std::strcmp(t1.data(), t2.data()) && (t2 == t3));
     std::cout << "id: " << s.result<int>("id") << "\n"
               << "cr: " << s.result<double>("cr") << "\n"
               << "ct: " << t3 << "\n"

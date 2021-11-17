@@ -12,5 +12,5 @@ BROWSE
 .vs
 
 cmake-build-*
-test
+sqlixx-unit-test
 test.db
