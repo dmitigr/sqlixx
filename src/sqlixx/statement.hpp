@@ -1,30 +1,24 @@
 // -*- C++ -*-
-// Copyright (C) 2021 Dmitry Igrishin
 //
-// This software is provided 'as-is', without any express or implied
-// warranty. In no event will the authors be held liable for any damages
-// arising from the use of this software.
+// Copyright 2022 Dmitry Igrishin
 //
-// Permission is granted to anyone to use this software for any purpose,
-// including commercial applications, and to alter it and redistribute it
-// freely, subject to the following restrictions:
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// 1. The origin of this software must not be misrepresented; you must not
-//    claim that you wrote the original software. If you use this software
-//    in a product, an acknowledgment in the product documentation would be
-//    appreciated but is not required.
-// 2. Altered source versions must be plainly marked as such, and must not be
-//    misrepresented as being the original software.
-// 3. This notice may not be removed or altered from any source distribution.
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-// Dmitry Igrishin
-// dmitigr@gmail.com
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
 #ifndef DMITIGR_SQLIXX_STATEMENT_HPP
 #define DMITIGR_SQLIXX_STATEMENT_HPP
 
 #include "conversions.hpp"
-#include "../error/assert.hpp"
+#include "../base/assert.hpp"
 
 #include <sqlite3.h>
 
@@ -92,10 +86,10 @@ public:
     const unsigned int flags = 0)
   {
     if (!handle)
-      throw Exception{"cannot create SQLite statement by using invalid handle"};
+      throw Exception{"cannot create SQLite statement using invalid handle"};
 
-    if (const int r = sqlite3_prepare_v3(handle, sql.data(), sql.size(), flags,
-        &handle_, nullptr); r != SQLITE_OK)
+    if (const int r = sqlite3_prepare_v3(handle, sql.data(),
+        static_cast<int>(sql.size()), flags, &handle_, nullptr); r != SQLITE_OK)
       throw Sqlite_exception{r, std::string{"cannot prepare SQLite statement "}
         .append(sql).append(" (").append(sqlite3_errmsg(handle)).append(")")};
 
@@ -155,14 +149,17 @@ public:
     return result;
   }
 
-  /// Closes the statement.
-  void close()
+  /**
+   * @brief Closes the statement.
+   *
+   * @returns Non SQLITE_OK if the most recent execution of statement failed.
+   */
+  int close()
   {
-    if (const int r = sqlite3_finalize(handle_); r == SQLITE_OK) {
-      last_step_result_ = -1;
-      handle_ = {};
-    } else
-      throw Sqlite_exception{r, "cannot close SQLite statement"};
+    const int result = sqlite3_finalize(handle_);
+    last_step_result_ = -1;
+    handle_ = {};
+    return result;
   }
 
   // ---------------------------------------------------------------------------
@@ -196,7 +193,8 @@ public:
     if (!handle_)
       throw Exception{"cannot get parameter index of invalid SQLite statement"};
     else if (!name)
-      throw Exception{"cannot get SQLite statement parameter index by using invalid name"};
+      throw Exception{"cannot get SQLite statement parameter index using "
+        "invalid name"};
 
     return sqlite3_bind_parameter_index(handle_, name) - 1;
   }
@@ -211,7 +209,8 @@ public:
   {
     const int index = parameter_index(name);
     if (index < 0)
-      throw Exception{std::string{"SQLite statement has no parameter "}.append(name)};
+      throw Exception{std::string{"SQLite statement has no parameter "}
+        .append(name)};
     return index;
   }
 
@@ -226,7 +225,8 @@ public:
     if (!handle_)
       throw Exception{"cannot get parameter name of invalid SQLite statement"};
     else if (!(index < parameter_count()))
-      throw Exception{"cannot get SQLite statement parameter name by using invalid index"};
+      throw Exception{"cannot get SQLite statement parameter name using "
+        "invalid index"};
 
     return sqlite3_column_name(handle_, index + 1);
   }
@@ -240,7 +240,8 @@ public:
   void bind_null()
   {
     if (!handle_)
-      throw Exception{"cannot bind NULL to parameters of invalid SQLite statement"};
+      throw Exception{"cannot bind NULL to parameters of invalid SQLite "
+        "statement"};
 
     detail::check_bind(handle_, sqlite3_clear_bindings(handle_));
   }
@@ -254,9 +255,11 @@ public:
   void bind_null(const int index)
   {
     if (!handle_)
-      throw Exception{"cannot bind NULL to a parameter of invalid SQLite statement"};
+      throw Exception{"cannot bind NULL to a parameter of invalid SQLite "
+        "statement"};
     else if (!(index < parameter_count()))
-      throw Exception{"cannot bind NULL to a parameter of SQLite statement by using invalid index"};
+      throw Exception{"cannot bind NULL to a parameter of SQLite statement "
+        "using invalid index"};
 
     detail::check_bind(handle_, sqlite3_bind_null(handle_, index + 1));
   }
@@ -278,11 +281,14 @@ public:
   void bind(const int index, const char* const value)
   {
     if (!handle_)
-      throw Exception{"cannot bind a text to a parameter of invalid SQLite statement"};
+      throw Exception{"cannot bind a text to a parameter of invalid SQLite "
+        "statement"};
     else if (!(index < parameter_count()))
-      throw Exception{"cannot bind a text to a parameter of SQLite statement by using invalid index"};
+      throw Exception{"cannot bind a text to a parameter of SQLite statement "
+        "using invalid index"};
 
-    detail::check_bind(handle_, sqlite3_bind_text(handle_, index + 1, value, -1, SQLITE_STATIC));
+    detail::check_bind(handle_,
+      sqlite3_bind_text(handle_, index + 1, value, -1, SQLITE_STATIC));
   }
 
   /// @overload
@@ -295,10 +301,11 @@ public:
    * @brief Binds the parameter of the specified index with the value of type `T`.
    *
    * @param index A zero-based index of the parameter.
-   * @param value A value to bind. If this parameter is `lvalue`, then it's assumed
-   * that the value is a constant and does not need to be copied. If this parameter
-   * is `rvalue`, then it's assumed to be destructed after this function returns, so
-   * SQLite is required to make a private copy of the value before return.
+   * @param value A value to bind. If this parameter is `lvalue`, then it's
+   * assumed that the value is a constant and does not need to be copied. If this
+   * parameter is `rvalue`, then it's assumed to be destructed after this function
+   * returns, so SQLite is required to make a private copy of the value before
+   * return.
    *
    * @par Requires
    * `handle() && index < parameter_count()`.
@@ -307,9 +314,11 @@ public:
   void bind(const int index, T&& value)
   {
     if (!handle_)
-      throw Exception{"cannot bind a value to a parameter of invalid SQLite statement"};
+      throw Exception{"cannot bind a value to a parameter of invalid SQLite "
+        "statement"};
     else if (!(index < parameter_count()))
-      throw Exception{"cannot bind a value to a parameter of SQLite statement by using invalid index"};
+      throw Exception{"cannot bind a value to a parameter of SQLite statement "
+        "using invalid index"};
 
     using U = std::decay_t<T>;
     Conversions<U>::bind(handle_, index + 1, std::forward<T>(value));
@@ -335,7 +344,8 @@ public:
   template<typename ... Types>
   void bind_many(Types&& ... values)
   {
-    bind_many__(std::make_index_sequence<sizeof ... (Types)>{}, std::forward<Types>(values)...);
+    bind_many__(std::make_index_sequence<sizeof ... (Types)>{},
+      std::forward<Types>(values)...);
   }
 
   /// @}
@@ -425,7 +435,7 @@ public:
   template<typename ... Types>
   int execute(Types&& ... values)
   {
-    return execute([](const auto&){ return true; }, std::forward<Types>(values)...);
+    return execute([](const auto&){return true;}, std::forward<Types>(values)...);
   }
 
   /// Resets the statement back to its initial state, ready to be executed.
@@ -451,7 +461,8 @@ public:
   int column_count() const
   {
     if (!handle_)
-      throw Exception{"cannot get result column count of invalid SQLite statement"};
+      throw Exception{"cannot get result column count of invalid SQLite "
+        "statement"};
 
     return sqlite3_column_count(handle_);
   }
@@ -465,9 +476,11 @@ public:
   int column_index(const char* const name) const
   {
     if (!handle_)
-      throw Exception{"cannot get result column index of invalid SQLite statement"};
+      throw Exception{"cannot get result column index of invalid SQLite "
+        "statement"};
     else if (!name)
-      throw Exception{"cannot get result column index of SQLite statement by using invalid name"};
+      throw Exception{"cannot get result column index of SQLite statement "
+        "using invalid name"};
 
     const int count = column_count();
     for (int i = 0; i < count; ++i) {
@@ -503,9 +516,11 @@ public:
   std::string column_name(const int index) const
   {
     if (!handle_)
-      throw Exception{"cannot get result column name of invalid SQLite statement"};
+      throw Exception{"cannot get result column name of invalid SQLite "
+        "statement"};
     else if (!(index < column_count()))
-      throw Exception{"cannot get result column count of SQLite statement by using invalid index"};
+      throw Exception{"cannot get result column count of SQLite statement "
+        "using invalid index"};
 
     return sqlite3_column_name(handle_, index);
   }
@@ -522,9 +537,11 @@ public:
   T result(const int index) const
   {
     if (!handle_)
-      throw Exception{"cannot get result column value of invalid SQLite statement"};
+      throw Exception{"cannot get result column value of invalid SQLite "
+        "statement"};
     else if (!(index < column_count()))
-      throw Exception{"cannot get result column value of SQLite statement by using invalid index"};
+      throw Exception{"cannot get result column value of SQLite statement "
+        "using invalid index"};
 
     using U = std::decay_t<T>;
     return Conversions<U>::result(handle_, index);

@@ -1,30 +1,23 @@
 // -*- C++ -*-
-// Copyright (C) 2021 Dmitry Igrishin
 //
-// This software is provided 'as-is', without any express or implied
-// warranty. In no event will the authors be held liable for any damages
-// arising from the use of this software.
+// Copyright 2022 Dmitry Igrishin
 //
-// Permission is granted to anyone to use this software for any purpose,
-// including commercial applications, and to alter it and redistribute it
-// freely, subject to the following restrictions:
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
 //
-// 1. The origin of this software must not be misrepresented; you must not
-//    claim that you wrote the original software. If you use this software
-//    in a product, an acknowledgment in the product documentation would be
-//    appreciated but is not required.
-// 2. Altered source versions must be plainly marked as such, and must not be
-//    misrepresented as being the original software.
-// 3. This notice may not be removed or altered from any source distribution.
+//     http://www.apache.org/licenses/LICENSE-2.0
 //
-// Dmitry Igrishin
-// dmitigr@gmail.com
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
 
-#include "../src/error.hpp"
-#include "../src/sqlixx.hpp"
+#include "../../src/base/assert.hpp"
+#include "../../src/sqlixx/sqlixx.hpp"
+
 #include <iostream>
-
-#define ASSERT(a) DMITIGR_ASSERT(a)
 
 int main()
 {
@@ -61,7 +54,7 @@ int main()
     const auto t1 = s.result<sqlixx::Text_utf8>("ct");
     const auto t2 = s.result<std::string>("ct");
     const auto t3 = s.result<std::string_view>("ct");
-    ASSERT(!std::strcmp(t1.data(), t2.data()) && (t2 == t3));
+    DMITIGR_ASSERT(!std::strcmp(t1.data(), t2.data()) && (t2 == t3));
     std::cout << "id: " << s.result<int>("id") << "\n"
               << "cr: " << s.result<double>("cr") << "\n"
               << "ct: " << t3 << "\n"

@@ -14,15 +14,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef DMITIGR_SQLIXX_SQLIXX_HPP
-#define DMITIGR_SQLIXX_SQLIXX_HPP
+#ifndef DMITIGR_FS_FS_HPP
+#define DMITIGR_FS_FS_HPP
 
-#include "connection.hpp"
-#include "conversions.hpp"
-#include "data.hpp"
-#include "errctg.hpp"
-#include "exceptions.hpp"
-#include "statement.hpp"
-#include "version.hpp"
+#include "filesystem.hpp"
+#include "misc.hpp"
 
-#endif  // DMITIGR_SQLIXX_SQLIXX_HPP
+#endif  // DMITIGR_FS_FS_HPP

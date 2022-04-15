@@ -14,15 +14,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef DMITIGR_SQLIXX_SQLIXX_HPP
-#define DMITIGR_SQLIXX_SQLIXX_HPP
+#ifndef DMITIGR_FS_FILESYSTEM_HPP
+#define DMITIGR_FS_FILESYSTEM_HPP
 
-#include "connection.hpp"
-#include "conversions.hpp"
-#include "data.hpp"
-#include "errctg.hpp"
-#include "exceptions.hpp"
-#include "statement.hpp"
-#include "version.hpp"
+#if (defined(__clang__) && (__clang_major__ < 7)) || \
+    (defined(__GNUG__)  && (__GNUC__ < 8) && !defined (__clang__))
+  #include <experimental/filesystem>
+  namespace std {
+  namespace filesystem = experimental::filesystem;
+  } // namespace std
+#else
+  #include <filesystem>
+#endif
 
-#endif  // DMITIGR_SQLIXX_SQLIXX_HPP
+#endif // DMITIGR_FS_FILESYSTEM_HPP
