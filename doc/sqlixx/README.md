@@ -1,10 +1,8 @@
-# [SQLite] C++ driver
+# [SQLite] C++ driver (SQLite API)
 
 `dmitigr::sqlixx` - is a header-only C++ driver for [SQLite].
 
 To use this library, a compiler with C++17 support (such as GCC 7.5+) is required.
-
-**ATTENTION, the API is a subject to change!**
 
 ## Features
 
@@ -68,10 +66,5 @@ int main()
   "select * from tab where id >= ? and id < ?", 0, 3);
 }
 ```
-
-## TODO
-
-  - enum class Errc for errors;
-  - allow named parameters in execute().
 
 [SQLite]: https://www.sqlite.org/

@@ -18,7 +18,7 @@
 # Info
 # ------------------------------------------------------------------------------
 
-dmitigr_cpplipa_set_library_info(sqlixx 1 0 0 "Client API for SQLite")
+dmitigr_cpplipa_set_library_info(sqlixx 1 0 0 "SQLite API")
 
 # ------------------------------------------------------------------------------
 # Sources
